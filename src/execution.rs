@@ -1,107 +1,31 @@
-use crate::components::Memory;
+use crate::components::cpu::{CpuError, State};
+use crate::components::AddressError;
+use crate::{Bus, Cpu};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum CpuError {
-    #[error("Undefined opcode at pc {pc}: {opcode}")]
-    UndefinedOpcode { pc: u16, opcode: u8 },
-}
+type Result<T> = std::result::Result<T, ExecutionError>;
 
-#[derive(Debug, Clone)]
-pub struct Cpu {
-    a: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
-    sp: u16,
-    pc: u16,
-    flags: Flags,
-    state: State,
-    interrupt_master_enable: bool,
-    in_enable_interrupt_delay: bool,
-}
-
-impl Cpu {
-    pub fn new() -> Self {
-        Self::post_boot_rom()
-    }
-
-    pub fn zeroed() -> Self {
-        Self {
-            a: 0,
-            b: 0,
-            c: 0,
-            d: 0,
-            e: 0,
-            h: 0,
-            l: 0,
-            sp: 0,
-            pc: 0,
-            flags: Flags::new(),
-            state: State::Running,
-            interrupt_master_enable: false,
-            in_enable_interrupt_delay: false,
-        }
-    }
-
-    pub fn post_boot_rom() -> Self {
-        let mut blank = Self::zeroed();
-        blank.pc = 0x0100;
-        blank.sp = 0xFFFE;
-        blank
-    }
-
-    fn get_bc(&self) -> u16 {
-        ((self.b as u16) << 8) | (self.c as u16)
-    }
-
-    fn get_de(&self) -> u16 {
-        ((self.d as u16) << 8) | (self.e as u16)
-    }
-
-    fn get_hl(&self) -> u16 {
-        ((self.h as u16) << 8) | (self.l as u16)
-    }
-
-    fn set_bc(&mut self, bc: u16) {
-        self.b = (bc >> 8) as u8;
-        self.c = bc as u8;
-    }
-
-    fn set_de(&mut self, bc: u16) {
-        self.d = (bc >> 8) as u8;
-        self.e = bc as u8;
-    }
-
-    fn set_hl(&mut self, bc: u16) {
-        self.h = (bc >> 8) as u8;
-        self.l = bc as u8;
-    }
-
-    fn inc_pc(&mut self, by: u16) {
-        self.pc = self.pc.wrapping_add(by)
-    }
+#[derive(Debug, Error)]
+pub enum ExecutionError {
+    #[error(transparent)]
+    Cpu(#[from] CpuError),
+    #[error(transparent)]
+    Address(#[from] AddressError),
 }
 
 pub struct ExecutingCpu<'a> {
     cpu: &'a mut Cpu,
-    memory: &'a mut dyn Memory,
+    bus: &'a mut dyn Bus,
 }
 
 impl<'a> ExecutingCpu<'a> {
-    pub fn new(cpu: &'a mut Cpu, memory_map: &'a mut dyn Memory) -> Self {
-        Self {
-            cpu,
-            memory: memory_map,
-        }
+    pub fn new(cpu: &'a mut Cpu, bus: &'a mut dyn Bus) -> Self {
+        Self { cpu, bus }
     }
 
-    pub fn step(&mut self) -> Result<usize, CpuError> {
+    pub fn step(&mut self) -> Result<usize> {
         // Handle interrupt
-        let cycles = self.handle_interrupt();
+        let cycles = self.handle_interrupt()?;
         if cycles > 0 {
             return Ok(cycles);
         }
@@ -111,14 +35,14 @@ impl<'a> ExecutingCpu<'a> {
             self.cpu.interrupt_master_enable = true
         }
 
-        let opcode = self.memory.read_byte(self.cpu.pc);
+        let opcode = self.bus.read_byte(self.cpu.pc)?;
         self.cpu.inc_pc(1);
         let cycles = match opcode {
             0x00 => 1,
-            0x01 => self.load_immediate_16(Register16::BC),
-            0x11 => self.load_immediate_16(Register16::DE),
-            0x21 => self.load_immediate_16(Register16::HL),
-            0x31 => self.load_immediate_16(Register16::SP),
+            0x01 => self.load_immediate_16(Register16::BC)?,
+            0x11 => self.load_immediate_16(Register16::DE)?,
+            0x21 => self.load_immediate_16(Register16::HL)?,
+            0x31 => self.load_immediate_16(Register16::SP)?,
             0x40..=0x7F => {
                 if opcode == 0x76 {
                     self.cpu.state = State::Halted;
@@ -126,31 +50,31 @@ impl<'a> ExecutingCpu<'a> {
                 } else {
                     let source = Self::decode_register(opcode);
                     let target = Self::decode_ld_target_register(opcode);
-                    self.load(source, target)
+                    self.load(source, target)?
                 }
             }
             0x80..=0x87 => {
                 let reg = Self::decode_register(opcode);
-                self.add_reg(reg, false)
+                self.add_reg(reg, false)?
             }
             0x88..=0x8F => {
                 let reg = Self::decode_register(opcode);
-                self.add_reg(reg, true)
+                self.add_reg(reg, true)?
             }
             0x90..=0x97 => {
                 let reg = Self::decode_register(opcode);
-                self.sub_reg(reg, false)
+                self.sub_reg(reg, false)?
             }
             0x98..=0x9F => {
                 let reg = Self::decode_register(opcode);
-                self.sub_reg(reg, true)
+                self.sub_reg(reg, true)?
             }
-            0xC9 => self.ret(),
+            0xC9 => self.ret()?,
             0xCB => self.cb_prefix()?,
             0xCD => {
-                let target = self.get_from_address_16(self.cpu.pc);
+                let target = self.get_from_address_16(self.cpu.pc)?;
                 self.cpu.inc_pc(2);
-                self.call(target)
+                self.call(target)?
             }
             0xF3 => {
                 self.cpu.interrupt_master_enable = false;
@@ -171,16 +95,16 @@ impl<'a> ExecutingCpu<'a> {
         Ok(cycles)
     }
 
-    fn cb_prefix(&mut self) -> Result<usize, CpuError> {
-        match self.memory.read_byte(self.cpu.pc) {
+    fn cb_prefix(&mut self) -> Result<usize> {
+        match self.bus.read_byte(self.cpu.pc) {
             _ => todo!(),
         }
         self.cpu.inc_pc(1);
         Ok(todo!())
     }
 
-    fn load_immediate_16(&mut self, reg: Register16) -> usize {
-        let result = self.memory.read_word(self.cpu.pc);
+    fn load_immediate_16(&mut self, reg: Register16) -> Result<usize> {
+        let result = self.bus.read_word(self.cpu.pc)?;
         match reg {
             Register16::BC => self.cpu.set_bc(result),
             Register16::DE => self.cpu.set_de(result),
@@ -188,12 +112,12 @@ impl<'a> ExecutingCpu<'a> {
             Register16::SP => self.cpu.sp = result,
         };
         self.cpu.inc_pc(2);
-        3
+        Ok(3)
     }
 
-    fn load(&mut self, source: DecodedRegister, target: DecodedRegister) -> usize {
-        let byte = self.read_byte_register(source);
-        self.write_byte_register(target, byte);
+    fn load(&mut self, source: DecodedRegister, target: DecodedRegister) -> Result<usize> {
+        let byte = self.read_byte_register(source)?;
+        self.write_byte_register(target, byte)?;
 
         let mut cycles = 1;
         if source == DecodedRegister::IndirectHL {
@@ -202,11 +126,11 @@ impl<'a> ExecutingCpu<'a> {
         if target == DecodedRegister::IndirectHL {
             cycles += 1;
         }
-        cycles
+        Ok(cycles)
     }
 
-    fn add_reg(&mut self, source: DecodedRegister, including_carry: bool) -> usize {
-        let to_add = self.read_byte_register(source) as u16;
+    fn add_reg(&mut self, source: DecodedRegister, including_carry: bool) -> Result<usize> {
+        let to_add = self.read_byte_register(source)? as u16;
         let cur_a = self.cpu.a as u16;
         let carry = if including_carry {
             self.cpu.flags.c() as u16
@@ -227,14 +151,14 @@ impl<'a> ExecutingCpu<'a> {
         self.cpu.a = res;
 
         if source == DecodedRegister::IndirectHL {
-            2
+            Ok(2)
         } else {
-            1
+            Ok(1)
         }
     }
 
-    fn sub_reg(&mut self, source: DecodedRegister, including_carry: bool) -> usize {
-        let to_sub = self.read_byte_register(source) as i16;
+    fn sub_reg(&mut self, source: DecodedRegister, including_carry: bool) -> Result<usize> {
+        let to_sub = self.read_byte_register(source)? as i16;
         let cur_a = self.cpu.a as i16;
         let carry = if including_carry {
             self.cpu.flags.c() as i16
@@ -254,9 +178,9 @@ impl<'a> ExecutingCpu<'a> {
         self.cpu.a = res as u8;
 
         if source == DecodedRegister::IndirectHL {
-            2
+            Ok(2)
         } else {
-            1
+            Ok(1)
         }
     }
 
@@ -268,8 +192,8 @@ impl<'a> ExecutingCpu<'a> {
         DecodedRegister::from_triple((byte >> 3) & 0x7)
     }
 
-    fn read_byte_register(&self, register: DecodedRegister) -> u8 {
-        match register {
+    fn read_byte_register(&self, register: DecodedRegister) -> Result<u8> {
+        let result = match register {
             DecodedRegister::Register8(r) => match r {
                 Register8::A => self.cpu.a,
                 Register8::B => self.cpu.b,
@@ -279,11 +203,12 @@ impl<'a> ExecutingCpu<'a> {
                 Register8::H => self.cpu.h,
                 Register8::L => self.cpu.l,
             },
-            DecodedRegister::IndirectHL => self.get_from_address_8(self.cpu.get_hl()),
-        }
+            DecodedRegister::IndirectHL => self.get_from_address_8(self.cpu.get_hl())?,
+        };
+        Ok(result)
     }
 
-    fn write_byte_register(&mut self, register: DecodedRegister, byte: u8) {
+    fn write_byte_register(&mut self, register: DecodedRegister, byte: u8) -> Result<()> {
         match register {
             DecodedRegister::Register8(r) => match r {
                 Register8::A => self.cpu.a = byte,
@@ -294,129 +219,98 @@ impl<'a> ExecutingCpu<'a> {
                 Register8::H => self.cpu.h = byte,
                 Register8::L => self.cpu.l = byte,
             },
-            DecodedRegister::IndirectHL => self.set_address_to(self.cpu.get_hl(), byte),
+            DecodedRegister::IndirectHL => self.set_address_to(self.cpu.get_hl(), byte)?,
         }
+        Ok(())
     }
 
-    fn get_from_address_8(&self, addr: u16) -> u8 {
-        self.memory.read_byte(addr)
+    fn get_from_address_8(&self, addr: u16) -> Result<u8> {
+        Ok(self.bus.read_byte(addr)?)
     }
 
-    fn get_from_address_16(&self, addr: u16) -> u16 {
-        self.memory.read_word(addr)
+    fn get_from_address_16(&self, addr: u16) -> Result<u16> {
+        Ok(self.bus.read_word(addr)?)
     }
 
-    fn set_address_to(&mut self, addr: u16, byte: u8) {
-        self.memory.write_byte(addr, byte)
+    fn set_address_to(&mut self, addr: u16, byte: u8) -> Result<()> {
+        Ok(self.bus.write_byte(addr, byte)?)
     }
 
-    fn do_push(&mut self, value: u16) {
-        self.set_address_to(self.cpu.sp.wrapping_sub(1), (value >> 8) as u8);
-        self.set_address_to(self.cpu.sp.wrapping_sub(2), (value & 0xFF) as u8);
+    fn do_push(&mut self, value: u16) -> Result<()> {
+        self.set_address_to(self.cpu.sp.wrapping_sub(1), (value >> 8) as u8)?;
+        self.set_address_to(self.cpu.sp.wrapping_sub(2), (value & 0xFF) as u8)?;
         self.cpu.sp = self.cpu.sp.wrapping_sub(2);
+        Ok(())
     }
 
-    fn do_pop(&mut self) -> u16 {
-        let lower = self.get_from_address_8(self.cpu.sp) as u16;
-        let higher = self.get_from_address_8(self.cpu.sp.wrapping_add(1)) as u16;
+    fn do_pop(&mut self) -> Result<u16> {
+        let lower = self.get_from_address_8(self.cpu.sp)? as u16;
+        let higher = self.get_from_address_8(self.cpu.sp.wrapping_add(1))? as u16;
         self.cpu.sp = self.cpu.sp.wrapping_add(2);
 
-        (higher << 8) | lower
+        Ok((higher << 8) | lower)
     }
 
-    fn call(&mut self, addr: u16) -> usize {
-        self.do_push(self.cpu.pc);
+    fn call(&mut self, addr: u16) -> Result<usize> {
+        self.do_push(self.cpu.pc)?;
         self.cpu.pc = addr;
-        6
+        Ok(6)
     }
 
-    fn ret(&mut self) -> usize {
-        self.cpu.pc = self.do_pop();
+    fn ret(&mut self) -> Result<usize> {
+        self.cpu.pc = self.do_pop()?;
 
-        4
+        Ok(4)
     }
 
-    fn handle_interrupt(&mut self) -> usize {
+    fn handle_interrupt(&mut self) -> Result<usize> {
         if self.cpu.interrupt_master_enable {
-            let interrupt_enable_flags = self.memory.read_byte(0xFFFF);
-            let interrupt_request_flags = self.memory.read_byte(0xFF0F);
+            let interrupt_enable_flags = self.bus.read_byte(0xFFFF)?;
+            let interrupt_request_flags = self.bus.read_byte(0xFF0F)?;
             let pending = interrupt_enable_flags | interrupt_request_flags;
-            if pending & 0x01 != 0 {
+            let cycles = if pending & 0x01 != 0 {
                 // VBlank
-                self.memory
-                    .write_byte(0xFF0F, interrupt_request_flags & !0x01);
+                self.bus
+                    .write_byte(0xFF0F, interrupt_request_flags & !0x01)?;
                 self.cpu.interrupt_master_enable = false;
-                self.call(0x40);
+                self.call(0x40)?;
                 5
             } else if pending & 0x02 != 0 {
                 // LCD STAT
-                self.memory
-                    .write_byte(0xFF0F, interrupt_request_flags & !0x02);
+                self.bus
+                    .write_byte(0xFF0F, interrupt_request_flags & !0x02)?;
                 self.cpu.interrupt_master_enable = false;
-                self.call(0x48);
+                self.call(0x48)?;
                 5
             } else if pending & 0x04 != 0 {
                 // Timer
-                self.memory
-                    .write_byte(0xFF0F, interrupt_request_flags & !0x04);
+                self.bus
+                    .write_byte(0xFF0F, interrupt_request_flags & !0x04)?;
                 self.cpu.interrupt_master_enable = false;
-                self.call(0x50);
+                self.call(0x50)?;
                 5
             } else if pending & 0x08 != 0 {
                 // Serial
-                self.memory
-                    .write_byte(0xFF0F, interrupt_request_flags & !0x08);
+                self.bus
+                    .write_byte(0xFF0F, interrupt_request_flags & !0x08)?;
                 self.cpu.interrupt_master_enable = false;
-                self.call(0x58);
+                self.call(0x58)?;
                 5
             } else if pending & 0x10 != 0 {
                 // Joypad
-                self.memory
-                    .write_byte(0xFF0F, interrupt_request_flags & !0x10);
+                self.bus
+                    .write_byte(0xFF0F, interrupt_request_flags & !0x10)?;
                 self.cpu.interrupt_master_enable = false;
-                self.call(0x60);
+                self.call(0x60)?;
                 5
             } else {
                 0
-            }
+            };
+            Ok(cycles)
         } else {
-            0
+            Ok(0)
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct Flags {
-    z: bool,
-    n: bool,
-    h: bool,
-    c: bool,
-}
-
-impl Flags {
-    fn new() -> Self {
-        Self {
-            z: false,
-            n: false,
-            h: false,
-            c: false,
-        }
-    }
-
-    fn c(&self) -> u8 {
-        if self.c {
-            1
-        } else {
-            0
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum State {
-    Running,
-    Halted,
-    Stopped,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -463,14 +357,14 @@ enum Register16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::FlatMemory;
+    use crate::components::bus::FlatBus;
 
     #[test]
     fn ld_b_c() {
         let mut cpu = Cpu::zeroed();
         cpu.c = 3;
 
-        let mut memory = FlatMemory { mem: vec![0x41] };
+        let mut memory = FlatBus { mem: vec![0x41] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -484,7 +378,7 @@ mod tests {
         let mut cpu = Cpu::zeroed();
         cpu.set_hl(1);
 
-        let mut memory = FlatMemory {
+        let mut memory = FlatBus {
             mem: vec![0x66, 0x4],
         };
 
@@ -501,7 +395,7 @@ mod tests {
         cpu.a = 1;
         cpu.b = 3;
 
-        let mut memory = FlatMemory { mem: vec![0x80] };
+        let mut memory = FlatBus { mem: vec![0x80] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -520,7 +414,7 @@ mod tests {
         cpu.b = 3;
         cpu.flags.c = true;
 
-        let mut memory = FlatMemory { mem: vec![0x88] };
+        let mut memory = FlatBus { mem: vec![0x88] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -538,7 +432,7 @@ mod tests {
         cpu.a = 1;
         cpu.b = 255;
 
-        let mut memory = FlatMemory { mem: vec![0x80] };
+        let mut memory = FlatBus { mem: vec![0x80] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -557,7 +451,7 @@ mod tests {
         cpu.b = 255;
         cpu.flags.c = true;
 
-        let mut memory = FlatMemory { mem: vec![0x88] };
+        let mut memory = FlatBus { mem: vec![0x88] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -575,7 +469,7 @@ mod tests {
         cpu.a = 50;
         cpu.d = 25;
 
-        let mut memory = FlatMemory { mem: vec![0x92] };
+        let mut memory = FlatBus { mem: vec![0x92] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -593,7 +487,7 @@ mod tests {
         cpu.a = 1;
         cpu.d = 2;
 
-        let mut memory = FlatMemory { mem: vec![0x92] };
+        let mut memory = FlatBus { mem: vec![0x92] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -611,7 +505,7 @@ mod tests {
         cpu.a = 1;
         cpu.d = 1;
 
-        let mut memory = FlatMemory { mem: vec![0x92] };
+        let mut memory = FlatBus { mem: vec![0x92] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -629,7 +523,7 @@ mod tests {
         cpu.a = 1;
         cpu.d = 1;
 
-        let mut memory = FlatMemory { mem: vec![0x9A] };
+        let mut memory = FlatBus { mem: vec![0x9A] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -648,7 +542,7 @@ mod tests {
         cpu.d = 1;
         cpu.flags.c = true;
 
-        let mut memory = FlatMemory { mem: vec![0x9A] };
+        let mut memory = FlatBus { mem: vec![0x9A] };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -665,7 +559,9 @@ mod tests {
         let mut cpu = Cpu::zeroed();
         cpu.sp = 0x0005;
 
-        let mut memory = FlatMemory { mem: vec![0xCD, 0x34, 0x12, 0x00, 0x00] };
+        let mut memory = FlatBus {
+            mem: vec![0xCD, 0x34, 0x12, 0x00, 0x00],
+        };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -681,7 +577,9 @@ mod tests {
         let mut cpu = Cpu::zeroed();
         cpu.sp = 0x0003;
 
-        let mut memory = FlatMemory { mem: vec![0xC9, 0x00, 0x00, 0x34, 0x12] };
+        let mut memory = FlatBus {
+            mem: vec![0xC9, 0x00, 0x00, 0x34, 0x12],
+        };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -691,13 +589,14 @@ mod tests {
         assert_eq!(cpu.sp, 0x0005, "sp")
     }
 
-
     #[test]
     fn call_ret() {
         let mut cpu = Cpu::zeroed();
         cpu.sp = 0x0005;
 
-        let mut memory = FlatMemory { mem: vec![0xCD, 0x05, 0x00, 0x00, 0x00, 0xC9] };
+        let mut memory = FlatBus {
+            mem: vec![0xCD, 0x05, 0x00, 0x00, 0x00, 0xC9],
+        };
 
         let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
 
@@ -705,6 +604,6 @@ mod tests {
         ex.step().unwrap();
         assert_eq!(cpu.pc, 0x0003, "pc");
         assert_eq!(cpu.sp, 0x0005, "sp");
-        assert_eq!(memory.mem, [0xCD,0x05,0x00, 0x03, 0x00, 0xC9]);
+        assert_eq!(memory.mem, [0xCD, 0x05, 0x00, 0x03, 0x00, 0xC9]);
     }
 }
