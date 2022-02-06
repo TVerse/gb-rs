@@ -1,11 +1,13 @@
 pub mod bus;
 pub mod cartridge;
 pub mod cpu;
+pub mod high_ram;
 pub mod interrupt_controller;
 pub mod ppu;
 pub mod serial;
+pub mod sound;
+pub mod timer;
 pub mod wram;
-pub mod high_ram;
 
 use thiserror::Error;
 

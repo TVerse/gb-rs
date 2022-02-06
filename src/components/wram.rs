@@ -8,6 +8,10 @@ impl WorkRam {
     pub fn new() -> Self {
         Self { ram: [0; 8 * KIB] }
     }
+
+    pub fn raw(&self) -> &[u8] {
+        &self.ram
+    }
 }
 
 impl ByteAddressable for WorkRam {
@@ -15,6 +19,7 @@ impl ByteAddressable for WorkRam {
         let a = address as usize;
         match address {
             0xC000..=0xDFFF => Ok(self.ram[a - 0xC000]),
+            0xE000..=0xFDFF => Ok(self.ram[a - 0xE000]),
             _ => Err(AddressError::NonMappedAddress {
                 address,
                 description: "WorkRam read",
@@ -26,6 +31,7 @@ impl ByteAddressable for WorkRam {
         let a = address as usize;
         match address {
             0xC000..=0xDFFF => Ok(self.ram[a - 0xC000] = byte),
+            0xE000..=0xFDFF => Ok(self.ram[a - 0xE000] = byte),
             _ => Err(AddressError::NonMappedAddress {
                 address,
                 description: "WorkRam write",

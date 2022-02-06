@@ -1,4 +1,4 @@
-use crate::{AddressError, ByteAddressable, KIB};
+use crate::{AddressError, ByteAddressable};
 
 pub struct HighRam {
     ram: [u8; 127],
@@ -7,6 +7,10 @@ pub struct HighRam {
 impl HighRam {
     pub fn new() -> Self {
         Self { ram: [0; 127] }
+    }
+
+    pub fn raw(&self) -> &[u8] {
+        &self.ram
     }
 }
 

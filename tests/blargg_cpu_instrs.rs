@@ -1,10 +1,40 @@
 use gb_rs::{GameBoy, RomOnlyCartridge};
 use std::fs;
 use std::path::Path;
+use paste::paste;
 
-#[test]
-fn blargg_cpu_6() {
-    let rom = load_rom("06-ld r,r.gb");
+macro_rules! blargg_test {
+    ($n:expr) => {
+        paste! {
+           #[test]
+           fn [<blarg_cpu_instr_ $n>]() {
+                let rom = load_rom($n);
+                execute_test(rom);
+            }
+        }
+    }
+}
+
+blargg_test!("01");
+blargg_test!("02");
+blargg_test!("03");
+blargg_test!("04");
+blargg_test!("05");
+blargg_test!("06");
+blargg_test!("07");
+blargg_test!("08");
+blargg_test!("09");
+blargg_test!("10");
+blargg_test!("11");
+
+fn load_rom(prefix: &str) -> Vec<u8> {
+    let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
+    let file = fs::read_dir(base_path).unwrap().map(|d| d.unwrap()).find(|d| d.file_name().to_str().unwrap().starts_with(prefix)).unwrap().path();
+
+    fs::read(file).unwrap()
+}
+
+fn execute_test(rom: Vec<u8>) {
     let exact_rom = TryFrom::try_from(rom).unwrap();
     let cartridge = RomOnlyCartridge::new(exact_rom);
 
@@ -16,15 +46,9 @@ fn blargg_cpu_6() {
         gb.step().unwrap();
         gb.get_serial().unwrap().into_iter().for_each(|c| {
             serial_out.push(c);
-            println!("{}", String::from_utf8_lossy(&serial_out));
         });
+        if serial_out.ends_with("Failed".as_bytes()) {
+            panic!("{}", String::from_utf8_lossy(&serial_out))
+        }
     }
-}
-
-fn load_rom<P: AsRef<Path>>(path: P) -> Vec<u8> {
-    let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
-    let mut full_path = base_path.to_path_buf();
-    full_path.push(path);
-
-    fs::read(full_path).unwrap()
 }

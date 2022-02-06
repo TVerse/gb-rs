@@ -37,6 +37,14 @@ impl Ppu {
             buf: PixelBuffer::new(),
         }
     }
+
+    pub fn vram_raw(&self) -> &[u8] {
+        &self.vram
+    }
+
+    pub fn oam_raw(&self) -> &[u8] {
+        &self.oam
+    }
 }
 
 impl ByteAddressable for Ppu {

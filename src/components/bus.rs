@@ -1,9 +1,11 @@
 use crate::components::cartridge::Cartridge;
+use crate::components::high_ram::HighRam;
 use crate::components::interrupt_controller::InterruptController;
 use crate::components::ppu::Ppu;
+use crate::components::sound::Sound;
+use crate::components::timer::Timer;
 use crate::components::wram::WorkRam;
 use crate::components::{AddressError, ByteAddressable};
-use crate::components::high_ram::HighRam;
 use crate::Serial;
 
 pub trait Bus {
@@ -38,6 +40,8 @@ pub struct RealBus<'a> {
     pub work_ram: &'a mut WorkRam,
     pub interrupt_controller: &'a mut InterruptController,
     pub high_ram: &'a mut HighRam,
+    pub timer: &'a mut Timer,
+    pub sound: &'a mut Sound,
 }
 
 impl<'a> Bus for RealBus<'a> {
@@ -49,13 +53,14 @@ impl<'a> Bus for RealBus<'a> {
             .or_else(|_e| self.work_ram.read_byte(address))
             .or_else(|_e| self.interrupt_controller.read_byte(address))
             .or_else(|_e| self.high_ram.read_byte(address))
+            .or_else(|_e| self.timer.read_byte(address))
+            .or_else(|_e| self.sound.read_byte(address))
             .or_else(|_e| {
                 Err(AddressError::NonMappedAddress {
                     address,
                     description: "RealBus read",
                 })
             })
-            .or_else(|_e| Ok(0xFF))
     }
 
     fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
@@ -66,13 +71,14 @@ impl<'a> Bus for RealBus<'a> {
             .or_else(|_e| self.work_ram.write_byte(address, byte))
             .or_else(|_e| self.interrupt_controller.write_byte(address, byte))
             .or_else(|_e| self.high_ram.write_byte(address, byte))
+            .or_else(|_e| self.timer.write_byte(address, byte))
+            .or_else(|_e| self.sound.write_byte(address, byte))
             .or_else(|_e| {
                 Err(AddressError::NonMappedAddress {
                     address,
                     description: "RealBus write",
                 })
             })
-            .or_else(|_e| Ok(()))
     }
 }
 

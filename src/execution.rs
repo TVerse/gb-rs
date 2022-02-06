@@ -39,6 +39,7 @@ impl<'a> ExecutingCpu<'a> {
 
         let opcode = self.bus.read_byte(self.cpu.pc)?;
         self.cpu.inc_pc(1);
+        log::trace!("Got opcode: {:#04x}", opcode);
         let cycles = match opcode {
             0x00 => 1,
             0x01 => self.load_immediate_16(Register16::BC)?,
@@ -47,30 +48,36 @@ impl<'a> ExecutingCpu<'a> {
             0x04 => self.inc_reg8(Register8::B),
             0x05 => self.dec_reg8(Register8::B),
             0x06 => self.load_immediate_8(DecodedRegister::Register8(Register8::B))?,
+            0x07 => self.rlc(DecodedRegister::Register8(Register8::A))?,
+            0x09 => self.add_16(Register16::BC),
             0x0A => self.load_from_indirect_16(Register16::BC)?,
             0x0B => self.dec_reg16(Register16::BC),
             0x0C => self.inc_reg8(Register8::C),
             0x0D => self.dec_reg8(Register8::C),
             0x0E => self.load_immediate_8(DecodedRegister::Register8(Register8::C))?,
+            0x0F => self.rrc(DecodedRegister::Register8(Register8::A))?,
             0x11 => self.load_immediate_16(Register16::DE)?,
             0x12 => self.load_to_indirect_16(Register16::DE)?,
             0x13 => self.inc_reg16(Register16::DE),
             0x14 => self.inc_reg8(Register8::D),
             0x15 => self.dec_reg8(Register8::D),
             0x16 => self.load_immediate_8(DecodedRegister::Register8(Register8::D))?,
+            0x17 => self.rl(DecodedRegister::Register8(Register8::A))?,
             0x18 => {
                 let target = self.get_immediate_8()? as i8;
                 self.jump_relative(target);
                 3
             }
+            0x19 => self.add_16(Register16::DE),
             0x1A => self.load_from_indirect_16(Register16::DE)?,
             0x1B => self.dec_reg16(Register16::DE),
             0x1C => self.inc_reg8(Register8::E),
             0x1D => self.dec_reg8(Register8::E),
             0x1E => self.load_immediate_8(DecodedRegister::Register8(Register8::E))?,
+            0x1F => self.rr(DecodedRegister::Register8(Register8::A))?,
             0x20 => {
+                let target = self.get_immediate_8()? as i8;
                 if !self.cpu.flags.z {
-                    let target = self.get_immediate_8()? as i8;
                     self.jump_relative(target);
                     3
                 } else {
@@ -88,14 +95,15 @@ impl<'a> ExecutingCpu<'a> {
             0x25 => self.dec_reg8(Register8::H),
             0x26 => self.load_immediate_8(DecodedRegister::Register8(Register8::H))?,
             0x28 => {
+                let target = self.get_immediate_8()? as i8;
                 if self.cpu.flags.z {
-                    let target = self.get_immediate_8()? as i8;
                     self.jump_relative(target);
                     3
                 } else {
                     2
                 }
             }
+            0x29 => self.add_16(Register16::HL),
             0x2A => {
                 let c = self.load_from_indirect_16(Register16::HL)?;
                 self.cpu.set_hl(self.cpu.get_hl().wrapping_add(1));
@@ -105,9 +113,10 @@ impl<'a> ExecutingCpu<'a> {
             0x2C => self.inc_reg8(Register8::L),
             0x2D => self.dec_reg8(Register8::L),
             0x2E => self.load_immediate_8(DecodedRegister::Register8(Register8::L))?,
+            0x2F => self.cpl(),
             0x30 => {
+                let target = self.get_immediate_8()? as i8;
                 if !self.cpu.flags.c {
-                    let target = self.get_immediate_8()? as i8;
                     self.jump_relative(target);
                     3
                 } else {
@@ -124,15 +133,17 @@ impl<'a> ExecutingCpu<'a> {
             0x34 => self.inc_indirect()?,
             0x35 => self.dec_indirect()?,
             0x36 => self.load_immediate_8(DecodedRegister::IndirectHL)?,
+            0x37 => self.scf(),
             0x38 => {
+                let target = self.get_immediate_8()? as i8;
                 if self.cpu.flags.c {
-                    let target = self.get_immediate_8()? as i8;
                     self.jump_relative(target);
                     3
                 } else {
                     2
                 }
             }
+            0x39 => self.add_16(Register16::SP),
             0x3A => {
                 let c = self.load_from_indirect_16(Register16::HL)?;
                 self.cpu.set_hl(self.cpu.get_hl().wrapping_sub(1));
@@ -142,6 +153,7 @@ impl<'a> ExecutingCpu<'a> {
             0x3C => self.inc_reg8(Register8::A),
             0x3D => self.dec_reg8(Register8::A),
             0x3E => self.load_immediate_8(DecodedRegister::Register8(Register8::A))?,
+            0x3F => self.ccf(),
             0x40..=0x7F => {
                 if opcode == 0x76 {
                     self.cpu.state = State::Halted;
@@ -168,32 +180,212 @@ impl<'a> ExecutingCpu<'a> {
                 let reg = Self::decode_register(opcode);
                 self.sub_reg(reg, true)?
             }
+            0xA0..=0xA7 => {
+                let reg = Self::decode_register(opcode);
+                self.and_reg(reg)?
+            }
+            0xA8..=0xAF => {
+                let reg = Self::decode_register(opcode);
+                self.xor_reg(reg)?
+            }
+            0xB0..=0xB7 => {
+                let reg = Self::decode_register(opcode);
+                self.or_reg(reg)?
+            }
+            0xB8..=0xBF => {
+                let reg = Self::decode_register(opcode);
+                self.cp_reg(reg)?
+            }
+            0xC0 => {
+                if !self.cpu.flags.z {
+                    self.ret()?;
+                    5
+                } else {
+                    2
+                }
+            }
+            0xC1 => self.pop(Register16::BC)?,
+            0xC2 => {
+                let target = self.get_immediate_16()?;
+                if !self.cpu.flags.z {
+                    self.jump(target);
+                    4
+                } else {
+                    3
+                }
+            }
             0xC3 => {
                 let imm = self.get_immediate_16()?;
-                self.cpu.pc = imm;
+                self.jump(imm);
                 4
             }
+            0xC4 => {
+                let target = self.get_immediate_16()?;
+                if !self.cpu.flags.z {
+                    self.call(target)?;
+                    6
+                } else {
+                    3
+                }
+            }
+            0xC5 => self.push(Register16::BC)?,
+            0xC6 => {
+                let to_add = self.get_immediate_8()?;
+                self.add(to_add, false);
+                2
+            }
             0xC7 => self.rst(ResetVector::Zero)?,
+            0xC8 => {
+                if self.cpu.flags.z {
+                    self.ret()?;
+                    5
+                } else {
+                    2
+                }
+            }
             0xC9 => self.ret()?,
+            0xCA => {
+                let target = self.get_immediate_16()?;
+                if self.cpu.flags.z {
+                    self.jump(target);
+                    4
+                } else {
+                    3
+                }
+            }
             0xCB => self.cb_prefix()?,
+            0xCC => {
+                let target = self.get_immediate_16()?;
+                if self.cpu.flags.z {
+                    self.call(target)?;
+                    6
+                } else {
+                    3
+                }
+            }
             0xCD => {
                 let target = self.read_address_16(self.cpu.pc)?;
                 self.cpu.inc_pc(2);
                 self.call(target)?
             }
+            0xCE => {
+                let to_add = self.get_immediate_8()?;
+                self.add(to_add, true);
+                2
+            }
             0xCF => self.rst(ResetVector::One)?,
+            0xD0 => {
+                if !self.cpu.flags.c {
+                    self.ret()?;
+                    5
+                } else {
+                    2
+                }
+            }
+            0xD1 => self.pop(Register16::DE)?,
+            0xD2 => {
+                let target = self.get_immediate_16()?;
+                if !self.cpu.flags.c {
+                    self.jump(target);
+                    4
+                } else {
+                    3
+                }
+            }
+            0xD4 => {
+                let target = self.get_immediate_16()?;
+                if !self.cpu.flags.c {
+                    self.call(target)?;
+                    6
+                } else {
+                    3
+                }
+            }
+            0xD5 => self.push(Register16::DE)?,
+            0xD6 => {
+                let to_sub = self.get_immediate_8()?;
+                self.sub(to_sub, false);
+                2
+            }
             0xD7 => self.rst(ResetVector::Two)?,
+            0xD8 => {
+                if self.cpu.flags.c {
+                    self.ret()?;
+                    5
+                } else {
+                    2
+                }
+            }
+            0xD9 => {
+                self.cpu.interrupt_master_enable = true;
+                self.ret()?
+            }
+            0xDA => {
+                let target = self.get_immediate_16()?;
+                if self.cpu.flags.c {
+                    self.jump(target);
+                    4
+                } else {
+                    3
+                }
+            }
+            0xDC => {
+                let target = self.get_immediate_16()?;
+                if self.cpu.flags.c {
+                    self.call(target)?;
+                    6
+                } else {
+                    3
+                }
+            }
+            0xDE => {
+                let to_sub = self.get_immediate_8()?;
+                self.sub(to_sub, true);
+                2
+            }
             0xDF => self.rst(ResetVector::Three)?,
+            0xE0 => self.load_indirect_immediate_8_a()?,
+            0xE1 => self.pop(Register16::HL)?,
+            0xE5 => self.push(Register16::HL)?,
+            0xE6 => {
+                let to_and = self.get_immediate_8()?;
+                self.and(to_and);
+                2
+            }
             0xE7 => self.rst(ResetVector::Four)?,
+            0xE9 => {
+                self.jump(self.read_word_from_register16(Register16::HL));
+                1
+            },
+            0xEA => self.load_indirect_immediate_16_a()?,
+            0xEE => {
+                let to_xor = self.get_immediate_8()?;
+                self.xor(to_xor);
+                2
+            }
             0xEF => self.rst(ResetVector::Five)?,
+            0xF0 => self.load_a_indirect_immediate_8()?,
+            0xF1 => self.pop(Register16::AF)?,
             0xF3 => {
                 self.cpu.interrupt_master_enable = false;
                 1
             }
+            0xF5 => self.push(Register16::AF)?,
+            0xF6 => {
+                let to_or = self.get_immediate_8()?;
+                self.or(to_or);
+                2
+            }
             0xF7 => self.rst(ResetVector::Six)?,
+            0xFA => self.load_a_indirect_immediate_16()?,
             0xFB => {
                 self.cpu.in_enable_interrupt_delay = true;
                 1
+            }
+            0xFE => {
+                let to_cp = self.get_immediate_8()?;
+                self.cp(to_cp);
+                2
             }
             0xFF => self.rst(ResetVector::Seven)?,
             0xD3 | 0xDB | 0xDD | 0xE3 | 0xE4 | 0xEB | 0xEC | 0xED | 0xF4 | 0xFC | 0xFD => {
@@ -207,16 +399,308 @@ impl<'a> ExecutingCpu<'a> {
                 opcode, starting_pc
             ), // TODO comment this out once everything's implemented
         };
+        self.cpu.instruction_counter = self.cpu.instruction_counter.wrapping_add(1);
+        log::trace!("State after step: \n{}", self.cpu);
         Ok(cycles)
     }
 
     fn cb_prefix(&mut self) -> Result<usize> {
-        todo!()
-        // match self.bus.read_byte(self.cpu.pc) {
-        //     _ => todo!(),
-        // }
-        // self.cpu.inc_pc(1);
-        // Ok(todo!())
+        let cb_pc = self.cpu.pc;
+        let opcode = self.bus.read_byte(cb_pc)?;
+        self.cpu.inc_pc(1);
+        let cycles = match opcode {
+            0x00..=0x07 => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.rlc(reg)?
+            }
+            0x08..=0x0F => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.rrc(reg)?
+            }
+            0x10..=0x17 => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.rl(reg)?
+            }
+            0x18..=0x1F => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.rr(reg)?
+            }
+            0x20..=0x27 => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.sla(reg)?
+            }
+            0x28..=0x2F => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.sra(reg)?
+            }
+            0x30..=0x37 => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.swap(reg)?
+            }
+            0x38..=0x3F => {
+                let reg= DecodedRegister::from_triple(opcode & 0x7);
+                self.srl(reg)?
+            }
+            0x40..=0x7F => {
+                let reg = DecodedRegister::from_triple(opcode & 0x7);
+                let bit = opcode >> 3 & 0x7;
+                self.bit(reg, bit)?
+            }
+            0x80..=0xBF => {
+                let reg = DecodedRegister::from_triple(opcode & 0x7);
+                let bit = opcode >> 3 & 0x7;
+                self.reset_bit(reg, bit)?
+            }
+            0xC0..=0xFF => {
+                let reg = DecodedRegister::from_triple(opcode & 0x7);
+                let bit = opcode >> 3 & 0x7;
+                self.set_bit(reg, bit)?
+            }
+            // _ => panic!(
+            //     "Unimplemented CB-prefixed opcode {:#04x} at pc+1 {:#06x}",
+            //     opcode, cb_pc
+            // ), // TODO comment this out once everything's implemented
+        };
+        Ok(cycles)
+    }
+
+    fn get_decoded_register(&self, reg: DecodedRegister) -> Result<u8> {
+        match reg {
+            DecodedRegister::Register8(r) => Ok(self.read_byte_from_register8(r)),
+            DecodedRegister::IndirectHL => self.read_address_8(self.cpu.get_hl()),
+        }
+    }
+
+    fn set_decoded_register(&mut self, reg: DecodedRegister, byte: u8) -> Result<()> {
+        match reg {
+            DecodedRegister::Register8(r) => Ok(self.write_byte_to_register8(r, byte)),
+            DecodedRegister::IndirectHL => self.write_address(self.cpu.get_hl(), byte),
+        }
+    }
+
+    fn cpl(&mut self) -> usize {
+        let cur = self.read_byte_from_register8(Register8::A);
+        let new = !cur;
+        self.write_byte_to_register8(Register8::A, new);
+        self.cpu.flags.n = true;
+        self.cpu.flags.h = true;
+        1
+    }
+
+    fn ccf(&mut self) -> usize {
+        self.cpu.flags.n = true;
+        self.cpu.flags.h = true;
+        self.cpu.flags.c = !self.cpu.flags.c;
+        1
+    }
+
+    fn scf(&mut self) -> usize {
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = true;
+        1
+    }
+
+    fn rlc(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x80 > 0;
+        let new = cur.rotate_left(1);
+        self.cpu.flags.z = new == 0;
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn rrc(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x01 > 0;
+        let new = cur.rotate_right(1);
+        self.cpu.flags.z = new== 0;
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn rl(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        let cur_c = self.cpu.flags.c();
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x80 > 0;
+        let new = cur.rotate_left(1);
+        let new = (new & !(0x01)) | cur_c;
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn rr(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        let cur_c = self.cpu.flags.c();
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x01 > 0;
+        let new = cur.rotate_left(1);
+        let new = (new & !(0x80)) | (cur_c << 7);
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn sla(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x80 > 0;
+        let new = cur << 1;
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn sra(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x01 > 0;
+        let new = cur >> 1;
+        let new = (new  & !(0x80)) | (cur & 0x80);
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn srl(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.c = cur & 0x01 > 0;
+        let new = cur >> 1;
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn swap(&mut self, reg: DecodedRegister) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        let new = (cur << 4) | (cur >> 4);
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = false;
+        self.cpu.flags.z = new == 0;
+        self.cpu.flags.c = false;
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn bit(&mut self, reg: DecodedRegister, bit: u8) -> Result<usize> {
+        let cur = self.get_decoded_register(reg)?;
+        let b = cur & (1 << bit);
+        self.cpu.flags.n = false;
+        self.cpu.flags.h = true;
+        self.cpu.flags.z = b == 0;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(3)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn reset_bit(&mut self, reg: DecodedRegister, bit: u8) -> Result<usize> {
+        debug_assert!(bit < 8);
+        let cur = self.get_decoded_register(reg)?;
+        let new = cur & !(1 << bit);
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn set_bit(&mut self, reg: DecodedRegister, bit: u8) -> Result<usize> {
+        debug_assert!(bit < 8);
+        let cur = self.get_decoded_register(reg)?;
+        let new = cur | (1 << bit);
+        self.set_decoded_register(reg, new)?;
+
+        if reg == DecodedRegister::IndirectHL {
+            Ok(4)
+        } else {
+            Ok(2)
+        }
+    }
+
+    fn load_indirect_immediate_8_a(&mut self) -> Result<usize> {
+        let imm = self.get_immediate_8()? as u16;
+        let imm = imm | 0xFF00;
+        let byte = self.read_byte_from_register8(Register8::A);
+        self.write_address(imm, byte)?;
+
+        Ok(4)
+    }
+
+    fn load_a_indirect_immediate_8(&mut self) -> Result<usize> {
+        let imm = self.get_immediate_8()? as u16;
+        let imm = imm | 0xFF00;
+        let byte = self.read_address_8(imm)?;
+        self.write_byte_to_register8(Register8::A, byte);
+
+        Ok(4)
+    }
+
+    fn load_indirect_immediate_16_a(&mut self) -> Result<usize> {
+        let imm = self.get_immediate_16()?;
+        let byte = self.read_byte_from_register8(Register8::A);
+        self.write_address(imm, byte)?;
+
+        Ok(4)
+    }
+
+    fn load_a_indirect_immediate_16(&mut self) -> Result<usize> {
+        let imm = self.get_immediate_16()?;
+        let byte = self.read_address_8(imm)?;
+        self.write_byte_to_register8(Register8::A, byte);
+
+        Ok(4)
     }
 
     fn rst(&mut self, vector: ResetVector) -> Result<usize> {
@@ -234,19 +718,21 @@ impl<'a> ExecutingCpu<'a> {
         Ok(4)
     }
 
+    fn jump(&mut self, target: u16) {
+        self.cpu.pc = target
+    }
+
     fn jump_relative(&mut self, offset: i8) {
         self.cpu.pc = self.cpu.pc.wrapping_add(offset as u16)
     }
 
     fn load_from_indirect_16(&mut self, reg: Register16) -> Result<usize> {
-        debug_assert!(reg == Register16::BC || reg == Register16::DE || reg == Register16::HL);
         let byte = self.read_address_8(self.read_word_from_register16(reg))?;
         self.write_byte_to_register8(Register8::A, byte);
         Ok(2)
     }
 
     fn load_to_indirect_16(&mut self, reg: Register16) -> Result<usize> {
-        debug_assert!(reg == Register16::BC || reg == Register16::DE || reg == Register16::HL);
         let byte = self.read_byte_from_register8(Register8::A);
         self.write_address(self.read_word_from_register16(reg), byte)?;
         Ok(2)
@@ -255,9 +741,7 @@ impl<'a> ExecutingCpu<'a> {
     fn inc_reg8(&mut self, reg: Register8) -> usize {
         let result = self.read_byte_from_register8(reg).wrapping_add(1);
         self.write_byte_to_register8(reg, result);
-        if result == 0 {
-            self.cpu.flags.z = true;
-        }
+        self.cpu.flags.z = result == 0;
         self.cpu.flags.n = false;
         1
     }
@@ -265,9 +749,7 @@ impl<'a> ExecutingCpu<'a> {
     fn dec_reg8(&mut self, reg: Register8) -> usize {
         let result = self.read_byte_from_register8(reg).wrapping_sub(1);
         self.write_byte_to_register8(reg, result);
-        if result == 0 {
-            self.cpu.flags.z = true;
-        }
+        self.cpu.flags.z = result == 0;
         self.cpu.flags.n = true;
         1
     }
@@ -275,9 +757,7 @@ impl<'a> ExecutingCpu<'a> {
     fn inc_indirect(&mut self) -> Result<usize> {
         let result = self.read_address_8(self.cpu.get_hl())?.wrapping_add(1);
         self.write_address(self.cpu.get_hl(), result)?;
-        if result == 0 {
-            self.cpu.flags.z = true;
-        }
+        self.cpu.flags.z = result == 0;
         self.cpu.flags.n = false;
         Ok(3)
     }
@@ -285,9 +765,7 @@ impl<'a> ExecutingCpu<'a> {
     fn dec_indirect(&mut self) -> Result<usize> {
         let result = self.read_address_8(self.cpu.get_hl())?.wrapping_sub(1);
         self.write_address(self.cpu.get_hl(), result)?;
-        if result == 0 {
-            self.cpu.flags.z = true;
-        }
+        self.cpu.flags.z = result == 0;
         self.cpu.flags.n = true;
         Ok(3)
     }
@@ -311,12 +789,7 @@ impl<'a> ExecutingCpu<'a> {
     fn load_immediate_8(&mut self, reg: DecodedRegister) -> Result<usize> {
         let result = self.get_immediate_8()?;
 
-        match reg {
-            DecodedRegister::Register8(r) => self.write_byte_to_register8(r, result),
-            DecodedRegister::IndirectHL => {
-                self.write_address(self.read_address_16(self.cpu.get_hl())?, result)?;
-            }
-        }
+        self.set_decoded_register(reg, result)?;
 
         if reg == DecodedRegister::IndirectHL {
             Ok(3)
@@ -334,6 +807,7 @@ impl<'a> ExecutingCpu<'a> {
     fn load_immediate_16(&mut self, reg: Register16) -> Result<usize> {
         let result = self.get_immediate_16()?;
         match reg {
+            Register16::AF => self.cpu.set_af(result),
             Register16::BC => self.cpu.set_bc(result),
             Register16::DE => self.cpu.set_de(result),
             Register16::HL => self.cpu.set_hl(result),
@@ -343,15 +817,9 @@ impl<'a> ExecutingCpu<'a> {
     }
 
     fn load(&mut self, source: DecodedRegister, target: DecodedRegister) -> Result<usize> {
-        let byte = match source {
-            DecodedRegister::Register8(r) => self.read_byte_from_register8(r),
-            DecodedRegister::IndirectHL => self.read_address_8(self.cpu.get_hl())?,
-        };
+        let byte = self.get_decoded_register(source)?;
 
-        match target {
-            DecodedRegister::Register8(r) => self.write_byte_to_register8(r, byte),
-            DecodedRegister::IndirectHL => self.write_address(self.cpu.get_hl(), byte)?,
-        }
+        self.set_decoded_register(target, byte)?;
 
         let mut cycles = 1;
         if source == DecodedRegister::IndirectHL {
@@ -364,28 +832,9 @@ impl<'a> ExecutingCpu<'a> {
     }
 
     fn add_reg(&mut self, source: DecodedRegister, including_carry: bool) -> Result<usize> {
-        let to_add = match source {
-            DecodedRegister::Register8(r) => self.read_byte_from_register8(r),
-            DecodedRegister::IndirectHL => self.read_address_8(self.cpu.get_hl())?,
-        } as u16;
-        let cur_a = self.cpu.a as u16;
-        let carry = if including_carry {
-            self.cpu.flags.c() as u16
-        } else {
-            0
-        };
-        let res = cur_a + to_add + carry;
-        if res > 0xFF {
-            self.cpu.flags.c = true;
-        }
-        let res = res as u8;
-        if res == 0 {
-            self.cpu.flags.z = true;
-        }
+        let to_add = self.get_decoded_register(source)?;
 
-        self.cpu.flags.n = false;
-        // TODO H
-        self.cpu.a = res;
+        self.add(to_add, including_carry);
 
         if source == DecodedRegister::IndirectHL {
             Ok(2)
@@ -394,34 +843,152 @@ impl<'a> ExecutingCpu<'a> {
         }
     }
 
-    fn sub_reg(&mut self, source: DecodedRegister, including_carry: bool) -> Result<usize> {
-        let to_sub = match source {
-            DecodedRegister::Register8(r) => self.read_byte_from_register8(r),
-            DecodedRegister::IndirectHL => self.read_address_8(self.cpu.get_hl())?,
-        } as i16;
-        let cur_a = self.cpu.a as i16;
+    fn add(&mut self, to_add: u8, including_carry: bool) {
+        let to_add = to_add as u16;
         let carry = if including_carry {
-            self.cpu.flags.c() as i16
+            self.cpu.flags.c() as u16
         } else {
             0
         };
-        let res = cur_a.wrapping_sub(to_sub).wrapping_sub(carry);
-        if res < 0 {
-            self.cpu.flags.c = true;
-        }
+        let res = self.cpu.a as u16 + to_add + carry;
+        self.cpu.flags.c = res > 0xFF;
         let res = res as u8;
-        if res == 0 {
-            self.cpu.flags.z = true;
-        }
-        self.cpu.flags.n = true;
+        self.cpu.flags.z = res == 0;
+
+        self.cpu.flags.n = false;
         // TODO H
-        self.cpu.a = res as u8;
+        self.cpu.a = res;
+    }
+
+    fn add_16(&mut self, source: Register16) -> usize {
+        let first = self.read_word_from_register16(Register16::HL) as u32;
+        let second = self.read_word_from_register16(source) as u32;
+
+        let res = first + second;
+        self.write_word_to_register16(Register16::HL, res as u16);
+        if res > 0xFFFF {
+            self.cpu.flags.c = true;
+        } else {
+            self.cpu.flags.c = false;
+        }
+        // TODO H
+        self.cpu.flags.n = false;
+
+        2
+    }
+
+    fn sub_reg(&mut self, source: DecodedRegister, including_carry: bool) -> Result<usize> {
+        let to_sub = self.get_decoded_register(source)?;
+
+        self.sub(to_sub, including_carry);
 
         if source == DecodedRegister::IndirectHL {
             Ok(2)
         } else {
             Ok(1)
         }
+    }
+    fn sub(&mut self, to_sub: u8, including_carry: bool) {
+        let to_sub = to_sub as i16;
+        let carry = if including_carry {
+            self.cpu.flags.c() as i16
+        } else {
+            0
+        };
+        let res = (self.cpu.a as i16).wrapping_sub(to_sub).wrapping_sub(carry);
+        self.cpu.flags.c = res < 0;
+        let res = res as u8;
+        self.cpu.flags.z = res == 0;
+        self.cpu.flags.n = true;
+        // TODO H
+        self.cpu.a = res as u8;
+    }
+
+    fn and_reg(&mut self, source: DecodedRegister) -> Result<usize> {
+        let to_and = self.get_decoded_register(source)?;
+
+        self.and(to_and);
+
+        if source == DecodedRegister::IndirectHL {
+            Ok(2)
+        } else {
+            Ok(1)
+        }
+    }
+    fn and(&mut self, to_and: u8) {
+        let res = self.cpu.a & to_and;
+        self.cpu.flags.c = false;
+        self.cpu.flags.z = res == 0;
+
+        self.cpu.flags.h = true;
+        self.cpu.flags.n = false;
+
+        self.cpu.a = res;
+    }
+
+    fn or_reg(&mut self, source: DecodedRegister) -> Result<usize> {
+        let to_or = self.get_decoded_register(source)?;
+
+        self.or(to_or);
+
+        if source == DecodedRegister::IndirectHL {
+            Ok(2)
+        } else {
+            Ok(1)
+        }
+    }
+
+    fn or(&mut self, to_or: u8) {
+        let res = self.cpu.a | to_or;
+        self.cpu.flags.c = false;
+        self.cpu.flags.z = res == 0;
+
+        self.cpu.flags.h = false;
+        self.cpu.flags.n = false;
+
+        self.cpu.a = res;
+    }
+
+    fn xor_reg(&mut self, source: DecodedRegister) -> Result<usize> {
+        let to_xor = self.get_decoded_register(source)?;
+
+        self.xor(to_xor);
+
+        if source == DecodedRegister::IndirectHL {
+            Ok(2)
+        } else {
+            Ok(1)
+        }
+    }
+    fn xor(&mut self, to_xor: u8) {
+        let res = self.cpu.a ^ to_xor;
+        self.cpu.flags.c = false;
+        self.cpu.flags.z = res == 0;
+
+        self.cpu.flags.h = false;
+        self.cpu.flags.n = false;
+
+        self.cpu.a = res;
+    }
+
+    fn cp_reg(&mut self, source: DecodedRegister) -> Result<usize> {
+        let to_cp = self.get_decoded_register(source)?;
+
+        self.cp(to_cp);
+
+        if source == DecodedRegister::IndirectHL {
+            Ok(2)
+        } else {
+            Ok(1)
+        }
+    }
+
+    fn cp(&mut self, to_cp: u8) {
+        let to_cp = to_cp as i16;
+        let res = (self.cpu.a as i16).wrapping_sub(to_cp);
+        self.cpu.flags.c = res < 0;
+        let res = res as u8;
+        self.cpu.flags.z = res == 0;
     }
 
     fn decode_register(byte: u8) -> DecodedRegister {
@@ -446,6 +1013,7 @@ impl<'a> ExecutingCpu<'a> {
 
     fn read_word_from_register16(&self, register: Register16) -> u16 {
         match register {
+            Register16::AF => self.cpu.get_af(),
             Register16::BC => self.cpu.get_bc(),
             Register16::DE => self.cpu.get_de(),
             Register16::HL => self.cpu.get_hl(),
@@ -467,6 +1035,7 @@ impl<'a> ExecutingCpu<'a> {
 
     fn write_word_to_register16(&mut self, register: Register16, word: u16) {
         match register {
+            Register16::AF => self.cpu.set_af(word),
             Register16::BC => self.cpu.set_bc(word),
             Register16::DE => self.cpu.set_de(word),
             Register16::HL => self.cpu.set_hl(word),
@@ -484,6 +1053,20 @@ impl<'a> ExecutingCpu<'a> {
 
     fn write_address(&mut self, addr: u16, byte: u8) -> Result<()> {
         Ok(self.bus.write_byte(addr, byte)?)
+    }
+
+    fn push(&mut self, reg: Register16) -> Result<usize> {
+        let v = self.read_word_from_register16(reg);
+        self.do_push(v)?;
+
+        Ok(4)
+    }
+
+    fn pop(&mut self, reg: Register16) -> Result<usize> {
+        let v = self.do_pop()?;
+        self.write_word_to_register16(reg, v);
+
+        Ok(3)
     }
 
     fn do_push(&mut self, value: u16) -> Result<()> {
@@ -596,6 +1179,7 @@ enum Register8 {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Register16 {
+    AF,
     BC,
     DE,
     HL,
@@ -683,7 +1267,7 @@ mod tests {
         assert_eq!(cpu.a, 5, "value");
         assert!(!cpu.flags.z, "zero");
         assert!(!cpu.flags.n, "sub");
-        assert!(cpu.flags.c, "carry");
+        assert!(!cpu.flags.c, "carry");
     }
 
     #[test]
@@ -865,5 +1449,94 @@ mod tests {
         assert_eq!(cpu.pc, 0x0003, "pc");
         assert_eq!(cpu.sp, 0x0005, "sp");
         assert_eq!(memory.mem, [0xCD, 0x05, 0x00, 0x03, 0x00, 0xC9]);
+    }
+
+    #[test]
+    fn jp_a16() {
+        let mut cpu = Cpu::zeroed();
+
+        let mut memory = FlatBus {
+            mem: vec![0xC3, 0x04, 0x00, 0x04, 0x14],
+        };
+
+        let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
+
+        let cycles = ex.step().unwrap();
+        assert_eq!(cycles, 4, "cycles");
+        assert_eq!(cpu.pc, 0x0004, "pc");
+
+        let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
+        let _ = ex.step().unwrap();
+        assert_eq!(cpu.b, 0, "b");
+        assert_eq!(cpu.d, 1, "d");
+    }
+
+    #[test]
+    fn rlc() {
+        let mut cpu = Cpu::zeroed();
+        cpu.b = 0x55;
+        cpu.flags.c = true;
+
+        let mut memory = FlatBus {
+            mem: vec![0xCB, 0x00],
+        };
+
+        let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
+
+        let cycles = ex.step().unwrap();
+        assert_eq!(cycles, 2, "cycles");
+        assert_eq!(cpu.b, 0xAA, "b");
+        assert!(!cpu.flags.c, "c")
+    }
+    #[test]
+    fn rrc() {
+        let mut cpu = Cpu::zeroed();
+        cpu.b = 0x55;
+        cpu.flags.c = true;
+
+        let mut memory = FlatBus {
+            mem: vec![0xCB, 0x08],
+        };
+
+        let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
+
+        let cycles = ex.step().unwrap();
+        assert_eq!(cycles, 2, "cycles");
+        assert_eq!(cpu.b, 0xAA, "b");
+        assert!(cpu.flags.c, "c")
+    }
+    #[test]
+    fn rl() {
+        let mut cpu = Cpu::zeroed();
+        cpu.b = 0x55;
+        cpu.flags.c = true;
+
+        let mut memory = FlatBus {
+            mem: vec![0xCB, 0x10],
+        };
+
+        let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
+
+        let cycles = ex.step().unwrap();
+        assert_eq!(cycles, 2, "cycles");
+        assert_eq!(cpu.b, 0xAB, "b");
+        assert!(!cpu.flags.c, "c")
+    }
+    #[test]
+    fn rr() {
+        let mut cpu = Cpu::zeroed();
+        cpu.b = 0x55;
+        cpu.flags.c = true;
+
+        let mut memory = FlatBus {
+            mem: vec![0xCB, 0x18],
+        };
+
+        let mut ex = ExecutingCpu::new(&mut cpu, &mut memory);
+
+        let cycles = ex.step().unwrap();
+        assert_eq!(cycles, 2, "cycles");
+        assert_eq!(cpu.b, 0xAA, "b");
+        assert!(cpu.flags.c, "c")
     }
 }
