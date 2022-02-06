@@ -1,36 +1,34 @@
-use crate::components::AddressError;
-use crate::ByteAddressable;
+use crate::{AddressError, ByteAddressable, KIB};
 
-pub struct Serial {
-    sb: u8,
-    sc: u8,
+pub struct WorkRam {
+    ram: [u8; 8 * KIB],
 }
 
-impl Serial {
+impl WorkRam {
     pub fn new() -> Self {
-        Self { sb: 0, sc: 0 }
+        Self { ram: [0; 8 * KIB] }
     }
 }
 
-impl ByteAddressable for Serial {
+impl ByteAddressable for WorkRam {
     fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+        let a = address as usize;
         match address {
-            0xFF01 => Ok(self.sb),
-            0xFF02 => Ok(self.sc),
+            0xC000..=0xDFFF => Ok(self.ram[a - 0xC000]),
             _ => Err(AddressError::NonMappedAddress {
                 address,
-                description: "Serial read",
+                description: "WorkRam read",
             }),
         }
     }
 
     fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+        let a = address as usize;
         match address {
-            0xFF01 => Ok(self.sb = byte),
-            0xFF02 => Ok(self.sc = byte),
+            0xC000..=0xDFFF => Ok(self.ram[a - 0xC000] = byte),
             _ => Err(AddressError::NonMappedAddress {
                 address,
-                description: "Serial write",
+                description: "WorkRam write",
             }),
         }
     }

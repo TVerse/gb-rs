@@ -1,4 +1,4 @@
-use crate::components::{AddressError};
+use crate::components::AddressError;
 use crate::KIB;
 
 pub trait Cartridge {
@@ -8,6 +8,12 @@ pub trait Cartridge {
 
 pub struct RomOnlyCartridge {
     rom: [u8; 32 * KIB],
+}
+
+impl RomOnlyCartridge {
+    pub fn new(rom: [u8; 32 * KIB]) -> Self {
+        Self { rom }
+    }
 }
 
 impl Cartridge for RomOnlyCartridge {
