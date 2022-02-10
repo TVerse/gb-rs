@@ -10,6 +10,12 @@ impl Sound {
     }
 }
 
+impl Default for Sound {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteAddressable for Sound {
     // TODO
     fn read_byte(&self, address: u16) -> RawResult<u8> {

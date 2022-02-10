@@ -15,6 +15,12 @@ impl InterruptController {
     }
 }
 
+impl Default for InterruptController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteAddressable for InterruptController {
     fn read_byte(&self, address: u16) -> RawResult<u8> {
         match address {

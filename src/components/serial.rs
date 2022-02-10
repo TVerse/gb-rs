@@ -13,6 +13,12 @@ impl Serial {
     }
 }
 
+impl Default for Serial {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteAddressable for Serial {
     fn read_byte(&self, address: u16) -> RawResult<u8> {
         match address {

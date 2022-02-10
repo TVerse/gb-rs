@@ -20,6 +20,12 @@ impl Timer {
     }
 }
 
+impl Default for Timer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteAddressable for Timer {
     fn read_byte(&self, address: u16) -> RawResult<u8> {
         match address {

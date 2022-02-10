@@ -14,7 +14,6 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::components::controller::Controller;
-use crate::components::cpu::Register16;
 use crate::components::high_ram::HighRam;
 use crate::components::interrupt_controller::InterruptController;
 use crate::components::sound::Sound;

@@ -8,6 +8,12 @@ impl Controller {
     }
 }
 
+impl Default for Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteAddressable for Controller {
     fn read_byte(&self, address: u16) -> crate::RawResult<u8> {
         match address {

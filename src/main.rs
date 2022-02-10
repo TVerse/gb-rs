@@ -34,11 +34,11 @@ fn main() {
 
     let mut serial_out: Vec<_> = "".bytes().collect();
 
-    let mut in_step = false;
+    let in_step = false;
 
     loop {
         match step(&mut gb, &mut serial_out, in_step) {
-            Ok(counter) => {
+            Ok(_counter) => {
                 if serial_out.ends_with("Failed".as_bytes())
                     || serial_out.ends_with("Passed".as_bytes())
                     || serial_out.ends_with("Done".as_bytes())

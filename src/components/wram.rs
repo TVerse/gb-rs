@@ -15,6 +15,12 @@ impl WorkRam {
     }
 }
 
+impl Default for WorkRam {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteAddressable for WorkRam {
     fn read_byte(&self, address: u16) -> RawResult<u8> {
         let a = address as usize;
