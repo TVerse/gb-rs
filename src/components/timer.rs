@@ -1,4 +1,6 @@
-use crate::{AddressError, ByteAddressable};
+use crate::ByteAddressable;
+use crate::GameBoyError;
+use crate::RawResult;
 
 pub struct Timer {
     div: u8,
@@ -19,29 +21,32 @@ impl Timer {
 }
 
 impl ByteAddressable for Timer {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+    fn read_byte(&self, address: u16) -> RawResult<u8> {
         match address {
             0xFF04 => Ok(self.div),
             0xFF05 => Ok(self.tima),
             0xFF06 => Ok(self.tma),
             0xFF07 => Ok(self.tac),
-            _ => Err(AddressError::NonMappedAddress {
+            _ => Err(GameBoyError::NonMappedAddress {
                 address,
                 description: "Timer read",
             }),
         }
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         match address {
-            0xFF04 => Ok(self.div = byte),
-            0xFF05 => Ok(self.tima = byte),
-            0xFF06 => Ok(self.tma = byte),
-            0xFF07 => Ok(self.tac = byte),
-            _ => Err(AddressError::NonMappedAddress {
-                address,
-                description: "Timer write",
-            }),
-        }
+            0xFF04 => self.div = byte,
+            0xFF05 => self.tima = byte,
+            0xFF06 => self.tma = byte,
+            0xFF07 => self.tac = byte,
+            _ => {
+                return Err(GameBoyError::NonMappedAddress {
+                    address,
+                    description: "Timer write",
+                })
+            }
+        };
+        Ok(())
     }
 }

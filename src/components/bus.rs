@@ -2,34 +2,32 @@ use crate::components::cartridge::Cartridge;
 use crate::components::high_ram::HighRam;
 use crate::components::interrupt_controller::InterruptController;
 use crate::components::ppu::Ppu;
+use crate::components::serial::Serial;
 use crate::components::sound::Sound;
 use crate::components::timer::Timer;
 use crate::components::wram::WorkRam;
-use crate::components::{AddressError, ByteAddressable};
-use crate::Serial;
+use crate::components::ByteAddressable;
+
+use crate::components::controller::Controller;
+use crate::{GameBoyError, RawResult};
 
 pub trait Bus {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError>;
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError>;
+    fn read_byte(&self, address: u16) -> RawResult<u8>;
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()>;
 
-    fn read_word(&self, address: u16) -> Result<u16, AddressError> {
+    fn read_word(&self, address: u16) -> RawResult<u16> {
         let lower = self.read_byte(address)? as u16;
         let higher = self.read_byte(address.wrapping_add(1))? as u16;
 
         Ok((higher << 8) | lower)
     }
-}
 
-impl<T> ByteAddressable for T
-where
-    T: Bus,
-{
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
-        Bus::read_byte(self, address)
-    }
+    fn write_word(&mut self, address: u16, word: u16) -> RawResult<()> {
+        let lower = word as u8;
+        let higher = (word >> 8) as u8;
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
-        Bus::write_byte(self, address, byte)
+        self.write_byte(address, lower)?;
+        self.write_byte(address.wrapping_add(1), higher)
     }
 }
 
@@ -42,10 +40,11 @@ pub struct RealBus<'a> {
     pub high_ram: &'a mut HighRam,
     pub timer: &'a mut Timer,
     pub sound: &'a mut Sound,
+    pub controller: &'a mut Controller,
 }
 
 impl<'a> Bus for RealBus<'a> {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+    fn read_byte(&self, address: u16) -> RawResult<u8> {
         self.cartridge
             .read_byte(address)
             .or_else(|_e| self.ppu.read_byte(address))
@@ -55,15 +54,14 @@ impl<'a> Bus for RealBus<'a> {
             .or_else(|_e| self.high_ram.read_byte(address))
             .or_else(|_e| self.timer.read_byte(address))
             .or_else(|_e| self.sound.read_byte(address))
-            .or_else(|_e| {
-                Err(AddressError::NonMappedAddress {
-                    address,
-                    description: "RealBus read",
-                })
+            .or_else(|_e| self.controller.read_byte(address))
+            .map_err(|_e| GameBoyError::NonMappedAddress {
+                address,
+                description: "RealBus read",
             })
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         self.cartridge
             .write_byte(address, byte)
             .or_else(|_e| self.ppu.write_byte(address, byte))
@@ -73,35 +71,35 @@ impl<'a> Bus for RealBus<'a> {
             .or_else(|_e| self.high_ram.write_byte(address, byte))
             .or_else(|_e| self.timer.write_byte(address, byte))
             .or_else(|_e| self.sound.write_byte(address, byte))
-            .or_else(|_e| {
-                Err(AddressError::NonMappedAddress {
-                    address,
-                    description: "RealBus write",
-                })
+            .or_else(|_e| self.controller.write_byte(address, byte))
+            .map_err(|_e| GameBoyError::NonMappedAddress {
+                address,
+                description: "RealBus write",
             })
     }
 }
 
 #[cfg(test)]
+#[derive(Debug)]
 pub struct FlatBus {
     pub mem: Vec<u8>,
 }
 
 #[cfg(test)]
 impl Bus for FlatBus {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+    fn read_byte(&self, address: u16) -> RawResult<u8> {
         self.mem
             .get(address as usize)
             .copied()
-            .ok_or(AddressError::NonMappedAddress {
+            .ok_or(GameBoyError::NonMappedAddress {
                 address,
                 description: "FlatBus read",
             })
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         self.mem.get_mut(address as usize).map(|b| *b = byte).ok_or(
-            AddressError::NonMappedAddress {
+            GameBoyError::NonMappedAddress {
                 address,
                 description: "FlatBus read",
             },

@@ -1,4 +1,4 @@
-use gb_rs::{GameBoy, GameBoyError, RomOnlyCartridge};
+use gb_rs::{parse_into_cartridge, GameBoy, Result};
 use simplelog::*;
 use std::env;
 use std::fs;
@@ -6,7 +6,7 @@ use std::fs::File;
 use std::path::Path;
 
 fn main() {
-    let default_path: String = "gb-test-roms/cpu_instrs/individual/06-ld r,r.gb".to_owned();
+    let default_path: String = "gb-test-roms/cpu_instrs/individual/09-op r,r.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
@@ -15,7 +15,7 @@ fn main() {
             ColorChoice::Auto,
         ),
         WriteLogger::new(
-            LevelFilter::Debug,
+            LevelFilter::Trace,
             Config::default(),
             File::create("gb_rs.log").unwrap(),
         ),
@@ -28,20 +28,26 @@ fn main() {
     log::info!("Loading from path: {}", path);
 
     let rom = load_rom(path);
-    let rom = TryFrom::try_from(rom).unwrap();
-    let cartridge = RomOnlyCartridge::new(rom);
+    let cartridge = parse_into_cartridge(rom);
 
-    let mut gb = GameBoy::new(Box::new(cartridge));
+    let mut gb = GameBoy::new(cartridge);
 
-    let mut serial_out: Vec<_> = "Serial out: ".bytes().collect();
+    let mut serial_out: Vec<_> = "".bytes().collect();
+
+    let mut in_step = false;
 
     loop {
-        match step(&mut gb, &mut serial_out) {
+        match step(&mut gb, &mut serial_out, in_step) {
             Ok(counter) => {
-                if counter % 10000000 == 0 {
-                    log::info!("Writing dump");
-                    gb.dump("dump");
-                    log::info!("Cpu: {}", gb.cpu());
+                if serial_out.ends_with("Failed".as_bytes())
+                    || serial_out.ends_with("Passed".as_bytes())
+                    || serial_out.ends_with("Done".as_bytes())
+                {
+                    log::info!("Serial out: {}", String::from_utf8_lossy(&serial_out));
+                    break;
+                }
+                if in_step {
+                    std::io::stdin().read_line(&mut String::new()).unwrap();
                 }
             }
             Err(e) => {
@@ -53,11 +59,12 @@ fn main() {
     }
 }
 
-fn step(gb: &mut GameBoy, serial_out: &mut Vec<u8>) -> Result<u64, GameBoyError> {
-    let counter = gb.step()?;
-    gb.get_serial()?.into_iter().for_each(|c| {
+fn step(gb: &mut GameBoy, serial_out: &mut Vec<u8>, verbose: bool) -> Result<u64> {
+    let counter = gb.step(verbose)?;
+    gb.get_serial().unwrap().into_iter().for_each(|c| {
         serial_out.push(c);
-        log::info!("{}", String::from_utf8_lossy(&serial_out));
+        // log::info!("Raw serial out: {:?}", serial_out);
+        // log::info!("Serial out: {}", String::from_utf8_lossy(serial_out));
     });
     Ok(counter)
 }

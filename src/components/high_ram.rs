@@ -1,4 +1,5 @@
-use crate::{AddressError, ByteAddressable};
+use crate::RawResult;
+use crate::{ByteAddressable, GameBoyError};
 
 pub struct HighRam {
     ram: [u8; 127],
@@ -15,25 +16,30 @@ impl HighRam {
 }
 
 impl ByteAddressable for HighRam {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+    fn read_byte(&self, address: u16) -> RawResult<u8> {
         let a = address as usize;
         match address {
             0xFF80..=0xFFFE => Ok(self.ram[a - 0xFF80]),
-            _ => Err(AddressError::NonMappedAddress {
+            _ => Err(GameBoyError::NonMappedAddress {
                 address,
                 description: "HighRam read",
             }),
         }
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         let a = address as usize;
         match address {
-            0xFF80..=0xFFFE => Ok(self.ram[a - 0xFF80] = byte),
-            _ => Err(AddressError::NonMappedAddress {
-                address,
-                description: "HighRam write",
-            }),
-        }
+            0xFF80..=0xFFFE => {
+                self.ram[a - 0xFF80] = byte;
+            }
+            _ => {
+                return Err(GameBoyError::NonMappedAddress {
+                    address,
+                    description: "HighRam write",
+                })
+            }
+        };
+        Ok(())
     }
 }

@@ -1,11 +1,12 @@
-use crate::components::{AddressError, ByteAddressable};
+use crate::components::ByteAddressable;
 use crate::KIB;
+use crate::{GameBoyError, RawResult};
 
 pub struct Ppu {
     vram: [u8; 8 * KIB],
     oam: [u8; 160],
-    lcdc: LCDC,
-    stat: STAT,
+    lcdc: Lcdc,
+    stat: Stat,
     scy: u8,
     scx: u8,
     ly: u8,
@@ -23,8 +24,8 @@ impl Ppu {
         Self {
             vram: [0; 8 * KIB],
             oam: [8; 160],
-            lcdc: LCDC { data: 0 },
-            stat: STAT { data: 0 },
+            lcdc: Lcdc { data: 0 },
+            stat: Stat { data: 0 },
             scy: 0,
             scx: 0,
             ly: 0,
@@ -48,7 +49,7 @@ impl Ppu {
 }
 
 impl ByteAddressable for Ppu {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+    fn read_byte(&self, address: u16) -> RawResult<u8> {
         let a = address as usize;
         match address {
             0x8000..=0x9FFF => Ok(self.vram[a - 0x8000]),
@@ -64,45 +65,50 @@ impl ByteAddressable for Ppu {
             0xFF47 => Ok(self.bgp.as_byte()),
             0xFF48 => Ok(self.obp0.as_byte()),
             0xFF49 => Ok(self.obp1.as_byte()),
-            _ => Err(AddressError::NonMappedAddress {
+            _ => Err(GameBoyError::NonMappedAddress {
                 address,
                 description: "PPU read",
             }),
         }
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         let a = address as usize;
         match address {
-            0x8000..=0x9FFF => Ok(self.vram[a - 0x8000] = byte),
-            0xFE00..=0xFE9F => Ok(self.oam[a - 0xFE00] = byte),
-            0xFF40 => Ok(self.lcdc = LCDC { data: byte }),
-            0xFF41 => Ok(self.stat.set_byte(byte)),
-            0xFF42 => Ok(self.scy = byte),
-            0xFF43 => Ok(self.scx = byte),
-            0xFF44 => Err(AddressError::NonMappedAddress {
-                address,
-                description: "PPU LY write",
-            }),
-            0xFF45 => Ok(self.lyc = byte),
-            0xFF4A => Ok(self.wy = byte),
-            0xFF4B => Ok(self.wx = byte),
-            0xFF47 => Ok(self.bgp = Palette::from_byte(byte)),
-            0xFF48 => Ok(self.obp0 = Palette::from_byte(byte)),
-            0xFF49 => Ok(self.obp1 = Palette::from_byte(byte)),
-            _ => Err(AddressError::NonMappedAddress {
-                address,
-                description: "PPU write",
-            }),
-        }
+            0x8000..=0x9FFF => self.vram[a - 0x8000] = byte,
+            0xFE00..=0xFE9F => self.oam[a - 0xFE00] = byte,
+            0xFF40 => self.lcdc = Lcdc { data: byte },
+            0xFF41 => self.stat.set_byte(byte),
+            0xFF42 => self.scy = byte,
+            0xFF43 => self.scx = byte,
+            0xFF44 => {
+                return Err(GameBoyError::NonMappedAddress {
+                    address,
+                    description: "PPU LY write",
+                })
+            }
+            0xFF45 => self.lyc = byte,
+            0xFF4A => self.wy = byte,
+            0xFF4B => self.wx = byte,
+            0xFF47 => self.bgp = Palette::from_byte(byte),
+            0xFF48 => self.obp0 = Palette::from_byte(byte),
+            0xFF49 => self.obp1 = Palette::from_byte(byte),
+            _ => {
+                return Err(GameBoyError::NonMappedAddress {
+                    address,
+                    description: "PPU write",
+                })
+            }
+        };
+        Ok(())
     }
 }
 
-struct LCDC {
+struct Lcdc {
     data: u8,
 }
 
-impl LCDC {
+impl Lcdc {
     fn lcd_enable(&self) -> bool {
         self.data & 0x80 != 0
     }
@@ -140,11 +146,11 @@ impl LCDC {
     }
 }
 
-struct STAT {
+struct Stat {
     data: u8,
 }
 
-impl STAT {
+impl Stat {
     const READONLY_FIELD_MASK: u8 = 0x07;
 
     fn lyc_eq_ly_interrupt_source(&self) -> bool {
@@ -183,9 +189,9 @@ impl STAT {
 
     fn set_lyx_eq_ly_flag(&mut self, value: bool) {
         if value {
-            self.data = self.data | 0x04;
+            self.data |= 0x04;
         } else {
-            self.data = self.data & !0x04;
+            self.data &= !0x04;
         }
     }
 
@@ -274,12 +280,12 @@ impl Palette {
         (self.idx3.as_byte() << 6)
             | (self.idx2.as_byte() << 4)
             | (self.idx1.as_byte() << 2)
-            | (self.idx0.as_byte() << 0)
+            | (self.idx0.as_byte())
     }
 
     fn from_byte(byte: u8) -> Self {
         Self {
-            idx0: Color::from_byte(byte >> 0),
+            idx0: Color::from_byte(byte),
             idx1: Color::from_byte(byte >> 2),
             idx2: Color::from_byte(byte >> 4),
             idx3: Color::from_byte(byte >> 6),

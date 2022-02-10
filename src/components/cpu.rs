@@ -1,39 +1,48 @@
-use thiserror::Error;
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Register8 {
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
+}
 
-#[derive(Error, Debug)]
-pub enum CpuError {
-    #[error("Undefined opcode at pc {pc}: {opcode}")]
-    UndefinedOpcode { pc: u16, opcode: u8 },
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Register16 {
+    AF,
+    BC,
+    DE,
+    HL,
+    SP,
+    PC,
 }
 
 #[derive(Debug, Clone)]
 pub struct Cpu {
-    pub a: u8,
-    pub b: u8,
-    pub c: u8,
-    pub d: u8,
-    pub e: u8,
-    pub h: u8,
-    pub l: u8,
-    pub sp: u16,
-    pub pc: u16,
-    pub flags: Flags,
-    pub state: State,
-    pub interrupt_master_enable: bool,
-    pub in_enable_interrupt_delay: bool,
-    pub instruction_counter: u64,
+    a: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+    h: u8,
+    l: u8,
+    sp: u16,
+    pc: u16,
+    flags: Flags,
+    state: State,
+    interrupt_master_enable: bool,
+    in_enable_interrupt_delay: bool,
+    instruction_counter: u64,
 }
 
 impl std::fmt::Display for Cpu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Cpu state:")?;
-        writeln!(f, "a: {:#04x}", self.a)?;
-        writeln!(f, "b: {:#04x}", self.b)?;
-        writeln!(f, "c: {:#04x}", self.c)?;
-        writeln!(f, "d: {:#04x}", self.d)?;
-        writeln!(f, "e: {:#04x}", self.e)?;
-        writeln!(f, "h: {:#04x}", self.h)?;
-        writeln!(f, "l: {:#04x}", self.l)?;
+        writeln!(f, "a: {:#04x}\tf: {:#04x}", self.a, self.flags.as_byte())?;
+        writeln!(f, "b: {:#04x}\tc: {:#04x}", self.b, self.c)?;
+        writeln!(f, "d: {:#04x}\te: {:#04x}", self.d, self.e)?;
+        writeln!(f, "h: {:#04x}\tl: {:#04x}", self.h, self.l)?;
         writeln!(f, "sp: {:#06x}", self.sp)?;
         writeln!(f, "pc: {:#06x}", self.pc)?;
 
@@ -45,15 +54,21 @@ impl std::fmt::Display for Cpu {
 
         writeln!(f, "state: {}", self.state)?;
 
-        writeln!(f, "instruction counter: {}", self.instruction_counter)?;
-
         if self.interrupt_master_enable {
             writeln!(f, "interrupts enabled")?;
         } else {
             writeln!(f, "interrupts disabled")?;
         }
 
+        write!(f, "instruction counter: {}", self.instruction_counter)?;
+
         Ok(())
+    }
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self::post_boot_rom()
     }
 }
 
@@ -85,52 +100,137 @@ impl Cpu {
         let mut cpu = Self::zeroed();
         cpu.pc = 0x0100;
         cpu.sp = 0xFFFE;
-        log::trace!("Initial CPU: {}", cpu);
         cpu
     }
 
-    pub fn get_af(&self) -> u16 {
-        ((self.a as u16) << 8) | (self.flags.as_byte() as u16)
+    pub fn get_register8(&self, reg: Register8) -> u8 {
+        match reg {
+            Register8::A => self.a,
+            Register8::B => self.b,
+            Register8::C => self.c,
+            Register8::D => self.d,
+            Register8::E => self.e,
+            Register8::H => self.h,
+            Register8::L => self.l,
+        }
     }
 
-    pub fn get_bc(&self) -> u16 {
-        ((self.b as u16) << 8) | (self.c as u16)
+    pub fn set_register8(&mut self, reg: Register8, byte: u8) {
+        match reg {
+            Register8::A => self.a = byte,
+            Register8::B => self.b = byte,
+            Register8::C => self.c = byte,
+            Register8::D => self.d = byte,
+            Register8::E => self.e = byte,
+            Register8::H => self.h = byte,
+            Register8::L => self.l = byte,
+        }
     }
 
-    pub fn get_de(&self) -> u16 {
-        ((self.d as u16) << 8) | (self.e as u16)
+    pub fn get_register16(&self, reg: Register16) -> u16 {
+        match reg {
+            Register16::AF => ((self.a as u16) << 8) | (self.flags.as_byte() as u16),
+            Register16::BC => ((self.b as u16) << 8) | (self.c as u16),
+            Register16::DE => ((self.d as u16) << 8) | (self.e as u16),
+            Register16::HL => ((self.h as u16) << 8) | (self.l as u16),
+            Register16::SP => self.sp,
+            Register16::PC => self.pc,
+        }
     }
 
-    pub fn get_hl(&self) -> u16 {
-        ((self.h as u16) << 8) | (self.l as u16)
+    pub fn set_register16(&mut self, reg: Register16, word: u16) {
+        let high = (word >> 8) as u8;
+        let low = word as u8;
+
+        match reg {
+            Register16::AF => {
+                self.a = high;
+                self.flags = Flags::from_byte(low);
+            }
+            Register16::BC => {
+                self.b = high;
+                self.c = low;
+            }
+            Register16::DE => {
+                self.d = high;
+                self.e = low;
+            }
+            Register16::HL => {
+                self.h = high;
+                self.l = low;
+            }
+            Register16::SP => self.sp = word,
+            Register16::PC => self.pc = word,
+        }
     }
 
-    pub fn set_af(&mut self, af: u16) {
-        self.a = (af >> 8) as u8;
-        self.flags.copy_from_byte(af as u8);
+    pub fn increment_pc(&mut self, by: u16) {
+        self.set_register16(
+            Register16::PC,
+            self.get_register16(Register16::PC).wrapping_add(by),
+        )
     }
 
-    pub fn set_bc(&mut self, bc: u16) {
-        self.b = (bc >> 8) as u8;
-        self.c = bc as u8;
+    pub fn get_state(&self) -> State {
+        self.state
     }
 
-    pub fn set_de(&mut self, de: u16) {
-        self.d = (de >> 8) as u8;
-        self.e = de as u8;
+    pub fn set_state(&mut self, state: State) {
+        self.state = state
     }
 
-    pub fn set_hl(&mut self, hl: u16) {
-        self.h = (hl >> 8) as u8;
-        self.l = hl as u8;
+    pub fn in_interrupt_delay(&self) -> bool {
+        self.in_enable_interrupt_delay
     }
 
-    pub fn inc_pc(&mut self, by: u16) {
-        self.pc = self.pc.wrapping_add(by)
+    pub fn interrupts_enabled(&self) -> bool {
+        self.interrupt_master_enable
+    }
+
+    pub fn start_enable_interrupts(&mut self) {
+        self.in_enable_interrupt_delay = true
+    }
+
+    pub fn enable_interrupts(&mut self) {
+        self.in_enable_interrupt_delay = false;
+        self.interrupt_master_enable = true
+    }
+
+    pub fn disable_interrupts(&mut self) {
+        self.interrupt_master_enable = false
+    }
+
+    pub fn edit_flags(
+        &mut self,
+        z: Option<bool>,
+        n: Option<bool>,
+        h: Option<bool>,
+        c: Option<bool>,
+    ) {
+        z.into_iter().for_each(|z| self.flags.z = z);
+        n.into_iter().for_each(|n| self.flags.n = n);
+        h.into_iter().for_each(|h| self.flags.h = h);
+        c.into_iter().for_each(|c| self.flags.c = c);
+    }
+
+    pub fn get_flags(&self) -> &Flags {
+        &self.flags
+    }
+
+    pub fn set_flags(&mut self, f: Flags) {
+        self.flags = f;
+    }
+
+    pub fn get_instruction_counter(&self) -> u64 {
+        self.instruction_counter
+    }
+
+    pub fn complete_instruction(&mut self) {
+        self.instruction_counter = self.instruction_counter.wrapping_add(1)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Flags {
     pub z: bool,
     pub n: bool,
@@ -145,14 +245,6 @@ impl Flags {
             n: false,
             h: false,
             c: false,
-        }
-    }
-
-    pub fn c(&self) -> u8 {
-        if self.c {
-            1
-        } else {
-            0
         }
     }
 
@@ -174,27 +266,12 @@ impl Flags {
         res
     }
 
-    pub fn copy_from_byte(&mut self, byte: u8) {
-        if byte & 0x80 != 0 {
-            self.z = true
-        } else {
-            self.z = false
-        }
-        if byte & 0x40 != 0 {
-            self.n = true
-        } else {
-            self.n = false
-        }
-        if byte & 0x20 != 0 {
-            self.h = true
-        } else {
-            self.h = false
-        }
-        if byte & 0x10 != 0 {
-            self.c = true
-        } else {
-            self.c = false
-        }
+    pub fn from_byte(byte: u8) -> Self {
+        let z = byte & 0x80 != 0;
+        let n = byte & 0x40 != 0;
+        let h = byte & 0x20 != 0;
+        let c = byte & 0x10 != 0;
+        Flags { z, n, h, c }
     }
 }
 

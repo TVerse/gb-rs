@@ -1,5 +1,6 @@
-use crate::{AddressError, ByteAddressable, KIB};
+use crate::{ByteAddressable, GameBoyError, RawResult, KIB};
 
+#[derive(Debug)]
 pub struct WorkRam {
     ram: [u8; 8 * KIB],
 }
@@ -15,27 +16,30 @@ impl WorkRam {
 }
 
 impl ByteAddressable for WorkRam {
-    fn read_byte(&self, address: u16) -> Result<u8, AddressError> {
+    fn read_byte(&self, address: u16) -> RawResult<u8> {
         let a = address as usize;
         match address {
             0xC000..=0xDFFF => Ok(self.ram[a - 0xC000]),
             0xE000..=0xFDFF => Ok(self.ram[a - 0xE000]),
-            _ => Err(AddressError::NonMappedAddress {
+            _ => Err(GameBoyError::NonMappedAddress {
                 address,
                 description: "WorkRam read",
             }),
         }
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> Result<(), AddressError> {
+    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         let a = address as usize;
         match address {
-            0xC000..=0xDFFF => Ok(self.ram[a - 0xC000] = byte),
-            0xE000..=0xFDFF => Ok(self.ram[a - 0xE000] = byte),
-            _ => Err(AddressError::NonMappedAddress {
-                address,
-                description: "WorkRam write",
-            }),
-        }
+            0xC000..=0xDFFF => self.ram[a - 0xC000] = byte,
+            0xE000..=0xFDFF => self.ram[a - 0xE000] = byte,
+            _ => {
+                return Err(GameBoyError::NonMappedAddress {
+                    address,
+                    description: "WorkRam write",
+                })
+            }
+        };
+        Ok(())
     }
 }
