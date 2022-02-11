@@ -1,4 +1,4 @@
-use gb_rs::{parse_into_cartridge, GameBoy, Instruction};
+use gb_rs::{parse_into_cartridge, GameBoy};
 use simplelog::*;
 use std::env;
 use std::fs;
@@ -57,7 +57,7 @@ fn main() {
                     log::info!("Cpu:\n{}", gb.cpu);
                     let mut read = String::with_capacity(1);
                     std::io::stdin().read_line(&mut read).unwrap();
-                    if read.contains("c") {
+                    if read.contains('c') {
                         in_step = false;
                     }
                 }
