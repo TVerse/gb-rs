@@ -1,4 +1,4 @@
-use gb_rs::{parse_into_cartridge, GameBoy};
+use gb_rs::{parse_into_cartridge, GameBoy, Instruction};
 use simplelog::*;
 use std::env;
 use std::fs;
@@ -6,7 +6,7 @@ use std::fs::File;
 use std::path::Path;
 
 fn main() {
-    let default_path: String = "gb-test-roms/cpu_instrs/individual/09-op r,r.gb".to_owned();
+    let default_path: String = "gb-test-roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
@@ -39,6 +39,9 @@ fn main() {
     loop {
         match gb.step() {
             Ok(res) => {
+                if res.execution_context.pc == 0xc656 {
+                    in_step = true;
+                }
                 if let Some(serial) = res.serial_byte {
                     serial_out.push(serial);
                 }
@@ -51,8 +54,12 @@ fn main() {
                 }
                 if in_step {
                     log::info!("Context:\n{}", res.execution_context);
-                    log::info!("Cpu: {}", gb.cpu);
-                    std::io::stdin().read_line(&mut String::new()).unwrap();
+                    log::info!("Cpu:\n{}", gb.cpu);
+                    let mut read = String::with_capacity(1);
+                    std::io::stdin().read_line(&mut read).unwrap();
+                    if read.contains("c") {
+                        in_step = false;
+                    }
                 }
             }
             Err(e) => {

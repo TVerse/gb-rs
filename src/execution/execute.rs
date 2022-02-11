@@ -30,14 +30,14 @@ impl<'a> Executor<'a> {
                 let b = self.get_common_register(s)?;
                 self.set_common_register(t, b)?;
             }
-            Instruction::LoadRegisterImmediate8(r, b) => self.set_common_register(r, b)?,
+            Instruction::LoadRegisterImmediate8(r, b) => self.set_common_register(r, b.0)?,
             Instruction::LoadAIndirectRegister(r) => {
                 let addr = self.cpu.get_register16(r);
                 let b = self.read_from_memory(addr)?;
                 self.cpu.set_register8(Register8::A, b);
             }
             Instruction::LoadAIndirectImmediate16(a) => {
-                let b = self.read_from_memory(a)?;
+                let b = self.read_from_memory(a.0)?;
                 self.cpu.set_register8(Register8::A, b);
             }
             Instruction::LoadIndirectRegisterA(r) => {
@@ -47,15 +47,15 @@ impl<'a> Executor<'a> {
             }
             Instruction::LoadIndirectImmediate16A(a) => {
                 let b = self.cpu.get_register8(Register8::A);
-                self.write_to_memory(a, b)?;
+                self.write_to_memory(a.0, b)?;
             }
             Instruction::LoadIOAIndirectImmediate8(a) => {
-                let byte = self.read_from_memory(0xFF00 + (a as u16))?;
+                let byte = self.read_from_memory(0xFF00 + (a.0 as u16))?;
                 self.cpu.set_register8(Register8::A, byte);
             }
             Instruction::LoadIOIndirectImmediate8A(a) => {
                 let byte = self.cpu.get_register8(Register8::A);
-                self.write_to_memory(0xFF00 + (a as u16), byte)?;
+                self.write_to_memory(0xFF00 + (a.0 as u16), byte)?;
             }
             Instruction::LoadIOIndirectCA => {
                 let a = self.cpu.get_register8(Register8::C);
@@ -95,10 +95,10 @@ impl<'a> Executor<'a> {
                 self.cpu
                     .set_register16(Register16::HL, addr.wrapping_sub(1));
             }
-            Instruction::LoadRegisterImmediate16(r, w) => self.cpu.set_register16(r, w),
+            Instruction::LoadRegisterImmediate16(r, w) => self.cpu.set_register16(r, w.0),
             Instruction::LoadIndirectImmediate16SP(a) => {
                 let w = self.cpu.get_register16(Register16::SP);
-                self.write_word_to_memory(a, w)?;
+                self.write_word_to_memory(a.0, w)?;
             }
             Instruction::LoadSPHL => {
                 let w = self.cpu.get_register16(Register16::HL);
@@ -114,7 +114,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::AddImmediate8(b) => {
                 let a = self.cpu.get_register8(Register8::A);
-                let res = self.add_8_set_flags(a, b, false);
+                let res = self.add_8_set_flags(a, b.0, false);
                 self.cpu.set_register8(Register8::A, res)
             }
             Instruction::AddCarryRegister(r) => {
@@ -125,7 +125,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::AddCarryImmediate8(b) => {
                 let a = self.cpu.get_register8(Register8::A);
-                let res = self.add_8_set_flags(a, b, true);
+                let res = self.add_8_set_flags(a, b.0, true);
                 self.cpu.set_register8(Register8::A, res)
             }
             Instruction::SubRegister(r) => {
@@ -137,7 +137,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::SubImmediate8(b) => {
                 let a = self.cpu.get_register8(Register8::A);
-                let res = self.sub_8_set_flags(a, b, false);
+                let res = self.sub_8_set_flags(a, b.0, false);
                 self.cpu.edit_flags(None, Some(true), None, None);
                 self.cpu.set_register8(Register8::A, res);
             }
@@ -150,7 +150,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::SubCarryImmediate8(b) => {
                 let a = self.cpu.get_register8(Register8::A);
-                let res = self.sub_8_set_flags(a, b, true);
+                let res = self.sub_8_set_flags(a, b.0, true);
                 self.cpu.edit_flags(None, Some(true), None, None);
                 self.cpu.set_register8(Register8::A, res);
             }
@@ -159,21 +159,21 @@ impl<'a> Executor<'a> {
                 self.and(b);
             }
             Instruction::AndImmediate8(b) => {
-                self.and(b);
+                self.and(b.0);
             }
             Instruction::XorRegister(r) => {
                 let b = self.get_common_register(r)?;
                 self.xor(b);
             }
             Instruction::XorImmediate8(b) => {
-                self.xor(b);
+                self.xor(b.0);
             }
             Instruction::OrRegister(r) => {
                 let b = self.get_common_register(r)?;
                 self.or(b);
             }
             Instruction::OrImmediate8(b) => {
-                self.or(b);
+                self.or(b.0);
             }
             Instruction::CompareRegister(r) => {
                 let a = self.cpu.get_register8(Register8::A);
@@ -183,7 +183,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::CompareImmediate8(b) => {
                 let a = self.cpu.get_register8(Register8::A);
-                let _res = self.sub_8_set_flags(a, b, false);
+                let _res = self.sub_8_set_flags(a, b.0, false);
                 self.cpu.edit_flags(None, Some(true), None, None);
             }
             Instruction::IncRegister8(r) => {
@@ -220,11 +220,11 @@ impl<'a> Executor<'a> {
                 self.cpu.set_register16(r, word);
             }
             Instruction::AddSPImmediate(i) => {
-                let res = self.add_i8_to_sp_and_set_flags(i);
+                let res = self.add_i8_to_sp_and_set_flags(i.0 as i8);
                 self.cpu.set_register16(Register16::SP, res);
             }
             Instruction::LoadHLSPImmediate(i) => {
-                let res = self.add_i8_to_sp_and_set_flags(i);
+                let res = self.add_i8_to_sp_and_set_flags(i.0 as i8);
                 self.cpu.set_register16(Register16::HL, res);
             }
             Instruction::RotateALeft => {
@@ -273,7 +273,7 @@ impl<'a> Executor<'a> {
             Instruction::DI => self.cpu.disable_interrupts(),
             Instruction::EI => self.cpu.start_enable_interrupts(),
             Instruction::JumpImmediate(a) => {
-                self.cpu.set_register16(Register16::PC, a);
+                self.cpu.set_register16(Register16::PC, a.0);
             }
             Instruction::JumpHL => {
                 let a = self.cpu.get_register16(Register16::HL);
@@ -282,31 +282,31 @@ impl<'a> Executor<'a> {
             Instruction::JumpConditionalImmediate(c, a) => {
                 let flags = self.cpu.get_flags();
                 if Self::should_conditional_jump(flags, c) {
-                    self.cpu.set_register16(Register16::PC, a)
+                    self.cpu.set_register16(Register16::PC, a.0)
                 } else {
                     conditional_branch_not_taken = true;
                 }
             }
             Instruction::JumpRelative(offset) => {
                 let pc = self.cpu.get_register16(Register16::PC);
-                let a = Self::add_u16_to_i8(pc, offset);
+                let a = Self::add_u16_to_i8(pc, offset.0 as i8);
                 self.cpu.set_register16(Register16::PC, a)
             }
             Instruction::JumpConditionalRelative(c, offset) => {
                 let flags = self.cpu.get_flags();
                 if Self::should_conditional_jump(flags, c) {
                     let pc = self.cpu.get_register16(Register16::PC);
-                    let a = Self::add_u16_to_i8(pc, offset);
+                    let a = Self::add_u16_to_i8(pc, offset.0 as i8);
                     self.cpu.set_register16(Register16::PC, a)
                 } else {
                     conditional_branch_not_taken = true;
                 }
             }
-            Instruction::CallImmediate(a) => self.call(a)?,
+            Instruction::CallImmediate(a) => self.call(a.0)?,
             Instruction::CallConditionalImmediate(c, a) => {
                 let flags = self.cpu.get_flags();
                 if Self::should_conditional_jump(flags, c) {
-                    self.call(a)?;
+                    self.call(a.0)?;
                 } else {
                     conditional_branch_not_taken = true;
                 }
@@ -322,7 +322,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::ReturnInterrupt => {
                 self.ret()?;
-                self.cpu.enable_interrupts();
+                self.cpu.start_enable_interrupts(); // TODO or enable immediately?
             }
             Instruction::Reset(rv) => self.call(rv.address())?,
         };
@@ -332,7 +332,7 @@ impl<'a> Executor<'a> {
         }
 
         let cycles = if conditional_branch_not_taken {
-            instruction.cycles_branch_not_taken()
+            instruction.cycles_branch_not_taken().expect("Called cycles_branch_not_taken on an incompatible instruction")
         } else {
             instruction.cycles()
         };
@@ -597,10 +597,11 @@ impl<'a> Executor<'a> {
 mod tests {
     use super::*;
     use crate::components::bus::FlatBus;
+    use crate::execution::instructions::{Immediate16, Immediate8};
 
     #[test]
     fn test_call() {
-        let instruction = Instruction::CallImmediate(0x5050);
+        let instruction = Instruction::CallImmediate(Immediate16(0x5050));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::SP, 0x2);
         cpu.set_register16(Register16::PC, 0x1000);
@@ -634,7 +635,7 @@ mod tests {
     #[test]
     fn load_register_immediate8() {
         let instruction =
-            Instruction::LoadRegisterImmediate8(CommonRegister::Register8(Register8::D), 0xBA);
+            Instruction::LoadRegisterImmediate8(CommonRegister::Register8(Register8::D), Immediate8(0xBA));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::HL, 0x0004);
         let mut bus = FlatBus { mem: vec![] };
@@ -660,7 +661,7 @@ mod tests {
 
     #[test]
     fn load_indirect_immediate_16_a() {
-        let instruction = Instruction::LoadIndirectImmediate16A(0x0002);
+        let instruction = Instruction::LoadIndirectImmediate16A(Immediate16(0x0002));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::A, 0x55);
         let mut bus = FlatBus {
@@ -959,7 +960,7 @@ mod tests {
 
     #[test]
     fn call() {
-        let instruction = Instruction::CallImmediate(0x1234);
+        let instruction = Instruction::CallImmediate(Immediate16(0x1234));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::SP, 0x0002);
         cpu.set_register16(Register16::PC, 0xAAAA);

@@ -1,4 +1,35 @@
 use crate::components::cpu::{Register16, Register8};
+use strum_macros::Display;
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct Immediate8(pub u8);
+
+impl std::fmt::Display for Immediate8 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#04x}", self.0)
+    }
+}
+
+impl std::fmt::Debug for Immediate8 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct Immediate16(pub u16);
+
+impl std::fmt::Display for Immediate16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#06x}", self.0)
+    }
+}
+
+impl std::fmt::Debug for Immediate16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CommonRegister {
@@ -27,13 +58,13 @@ impl CommonRegister {
 pub enum Instruction {
     // 8bit loads
     LoadRegisterRegister(CommonRegister, CommonRegister),
-    LoadRegisterImmediate8(CommonRegister, u8),
+    LoadRegisterImmediate8(CommonRegister, Immediate8),
     LoadAIndirectRegister(Register16),
-    LoadAIndirectImmediate16(u16),
+    LoadAIndirectImmediate16(Immediate16),
     LoadIndirectRegisterA(Register16),
-    LoadIndirectImmediate16A(u16),
-    LoadIOAIndirectImmediate8(u8),
-    LoadIOIndirectImmediate8A(u8),
+    LoadIndirectImmediate16A(Immediate16),
+    LoadIOAIndirectImmediate8(Immediate8),
+    LoadIOIndirectImmediate8A(Immediate8),
     LoadIOIndirectCA,
     LoadIOAIndirectC,
     LoadAIncrementHLIndirect,
@@ -41,28 +72,28 @@ pub enum Instruction {
     LoadADecrementHLIndirect,
     LoadDecrementHLAIndirect,
     // 16bit loads
-    LoadRegisterImmediate16(Register16, u16),
-    LoadIndirectImmediate16SP(u16),
+    LoadRegisterImmediate16(Register16, Immediate16),
+    LoadIndirectImmediate16SP(Immediate16),
     LoadSPHL,
     Push(Register16),
     Pop(Register16),
     // 8 bit arithmetic/logic
     AddRegister(CommonRegister),
-    AddImmediate8(u8),
+    AddImmediate8(Immediate8),
     AddCarryRegister(CommonRegister),
-    AddCarryImmediate8(u8),
+    AddCarryImmediate8(Immediate8),
     SubRegister(CommonRegister),
-    SubImmediate8(u8),
+    SubImmediate8(Immediate8),
     SubCarryRegister(CommonRegister),
-    SubCarryImmediate8(u8),
+    SubCarryImmediate8(Immediate8),
     AndRegister8(CommonRegister),
-    AndImmediate8(u8),
+    AndImmediate8(Immediate8),
     XorRegister(CommonRegister),
-    XorImmediate8(u8),
+    XorImmediate8(Immediate8),
     OrRegister(CommonRegister),
-    OrImmediate8(u8),
+    OrImmediate8(Immediate8),
     CompareRegister(CommonRegister),
-    CompareImmediate8(u8),
+    CompareImmediate8(Immediate8),
     IncRegister8(CommonRegister),
     DecRegister8(CommonRegister),
     DecimalAdjust,
@@ -71,8 +102,8 @@ pub enum Instruction {
     AddHLRegister(Register16),
     IncRegister16(Register16),
     DecRegister16(Register16),
-    AddSPImmediate(i8),
-    LoadHLSPImmediate(i8),
+    AddSPImmediate(Immediate8),
+    LoadHLSPImmediate(Immediate8),
     // Rotate/shift A
     RotateALeft,
     RotateALeftThroughCarry,
@@ -99,13 +130,13 @@ pub enum Instruction {
     DI,
     EI,
     // Jump
-    JumpImmediate(u16),
+    JumpImmediate(Immediate16),
     JumpHL,
-    JumpConditionalImmediate(JumpCondition, u16),
-    JumpRelative(i8),
-    JumpConditionalRelative(JumpCondition, i8),
-    CallImmediate(u16),
-    CallConditionalImmediate(JumpCondition, u16),
+    JumpConditionalImmediate(JumpCondition, Immediate16),
+    JumpRelative(Immediate8),
+    JumpConditionalRelative(JumpCondition, Immediate8),
+    CallImmediate(Immediate16),
+    CallConditionalImmediate(JumpCondition, Immediate16),
     Return,
     ReturnConditional(JumpCondition),
     ReturnInterrupt,
@@ -279,17 +310,14 @@ impl Instruction {
         }
     }
 
-    pub fn cycles_branch_not_taken(&self) -> usize {
+    pub fn cycles_branch_not_taken(&self) -> Option<usize> {
         match self {
-            Instruction::JumpConditionalImmediate(_, _) => 3,
-            Instruction::JumpConditionalRelative(_, _) => 2,
-            Instruction::CallConditionalImmediate(_, _) => 3,
-            Instruction::ReturnConditional(_) => 2,
-            _ => {
-                unreachable!(
-                    "Called cycles_branch_not_taken for an instruction that wasn't conditional"
-                )
-            }
+            Instruction::JumpConditionalImmediate(_, _) => Some(3),
+            Instruction::JumpConditionalRelative(_, _) => Some(2),
+            Instruction::CallConditionalImmediate(_, _) => Some(3),
+            Instruction::ReturnConditional(_) => Some(2),
+            _ => None
+
         }
     }
 
@@ -302,7 +330,12 @@ impl Instruction {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
 pub enum JumpCondition {
     NZ,
     Z,
@@ -333,6 +366,21 @@ impl ResetVector {
             ResetVector::Five => 0x0028,
             ResetVector::Six => 0x0030,
             ResetVector::Seven => 0x0038,
+        }
+    }
+}
+
+impl std::fmt::Display for ResetVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResetVector::Zero => write!(f, "0"),
+            ResetVector::One => write!(f, "1"),
+            ResetVector::Two => write!(f, "2"),
+            ResetVector::Three => write!(f, "3"),
+            ResetVector::Four => write!(f, "4"),
+            ResetVector::Five => write!(f, "5"),
+            ResetVector::Six => write!(f, "6"),
+            ResetVector::Seven => write!(f, "7"),
         }
     }
 }

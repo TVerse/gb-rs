@@ -1,6 +1,6 @@
 use crate::components::bus::Bus;
 use crate::components::cpu::{Cpu, Register16, Register8};
-use crate::execution::instructions::{CommonRegister, Instruction, JumpCondition, ResetVector};
+use crate::execution::instructions::{CommonRegister, Immediate16, Immediate8, Instruction, JumpCondition, ResetVector};
 use crate::{GameBoyError, RawResult};
 use Instruction::*;
 
@@ -68,7 +68,7 @@ impl<'a> Decoder<'a> {
             0x0D => DecRegister8(CommonRegister::Register8(Register8::C)),
             0x0E => LoadRegisterImmediate8(CommonRegister::Register8(Register8::C), immediate_8?),
             0x0F => RotateARight,
-            0x10 => self.stop(start_pc, immediate_8?)?,
+            0x10 => self.stop(start_pc, immediate_8?.0)?,
             0x11 => LoadRegisterImmediate16(Register16::DE, immediate_16?),
             0x12 => LoadIndirectRegisterA(Register16::DE),
             0x13 => IncRegister16(Register16::DE),
@@ -76,7 +76,7 @@ impl<'a> Decoder<'a> {
             0x15 => DecRegister8(CommonRegister::Register8(Register8::D)),
             0x16 => LoadRegisterImmediate8(CommonRegister::Register8(Register8::D), immediate_8?),
             0x17 => RotateALeftThroughCarry,
-            0x18 => JumpRelative(immediate_8? as i8),
+            0x18 => JumpRelative(immediate_8?),
             0x19 => AddHLRegister(Register16::DE),
             0x1A => LoadAIndirectRegister(Register16::DE),
             0x1B => DecRegister16(Register16::DE),
@@ -84,7 +84,7 @@ impl<'a> Decoder<'a> {
             0x1D => DecRegister8(CommonRegister::Register8(Register8::E)),
             0x1E => LoadRegisterImmediate8(CommonRegister::Register8(Register8::E), immediate_8?),
             0x1F => RotateARightThroughCarry,
-            0x20 => JumpConditionalRelative(JumpCondition::NZ, immediate_8? as i8),
+            0x20 => JumpConditionalRelative(JumpCondition::NZ, immediate_8?),
             0x21 => LoadRegisterImmediate16(Register16::HL, immediate_16?),
             0x22 => LoadIncrementHLIndirectA,
             0x23 => IncRegister16(Register16::HL),
@@ -92,7 +92,7 @@ impl<'a> Decoder<'a> {
             0x25 => DecRegister8(CommonRegister::Register8(Register8::H)),
             0x26 => LoadRegisterImmediate8(CommonRegister::Register8(Register8::H), immediate_8?),
             0x27 => DecimalAdjust,
-            0x28 => JumpConditionalRelative(JumpCondition::Z, immediate_8? as i8),
+            0x28 => JumpConditionalRelative(JumpCondition::Z, immediate_8?),
             0x29 => AddHLRegister(Register16::HL),
             0x2A => LoadAIncrementHLIndirect,
             0x2B => DecRegister16(Register16::HL),
@@ -100,7 +100,7 @@ impl<'a> Decoder<'a> {
             0x2D => DecRegister8(CommonRegister::Register8(Register8::L)),
             0x2E => LoadRegisterImmediate8(CommonRegister::Register8(Register8::L), immediate_8?),
             0x2F => Complement,
-            0x30 => JumpConditionalRelative(JumpCondition::NC, immediate_8? as i8),
+            0x30 => JumpConditionalRelative(JumpCondition::NC, immediate_8?),
             0x31 => LoadRegisterImmediate16(Register16::SP, immediate_16?),
             0x32 => LoadDecrementHLAIndirect,
             0x33 => IncRegister16(Register16::SP),
@@ -108,7 +108,7 @@ impl<'a> Decoder<'a> {
             0x35 => DecRegister8(CommonRegister::HLIndirect),
             0x36 => LoadRegisterImmediate8(CommonRegister::HLIndirect, immediate_8?),
             0x37 => Scf,
-            0x38 => JumpConditionalRelative(JumpCondition::C, immediate_8? as i8),
+            0x38 => JumpConditionalRelative(JumpCondition::C, immediate_8?),
             0x39 => AddHLRegister(Register16::SP),
             0x3A => LoadADecrementHLIndirect,
             0x3B => DecRegister16(Register16::SP),
@@ -144,7 +144,7 @@ impl<'a> Decoder<'a> {
             0xC8 => ReturnConditional(JumpCondition::Z),
             0xC9 => Return,
             0xCA => JumpConditionalImmediate(JumpCondition::Z, immediate_16?),
-            0xCB => self.cb_prefix(immediate_8?),
+            0xCB => self.cb_prefix(immediate_8?.0),
             0xCC => CallConditionalImmediate(JumpCondition::Z, immediate_16?),
             0xCD => CallImmediate(immediate_16?),
             0xCE => AddCarryImmediate8(immediate_8?),
@@ -168,7 +168,7 @@ impl<'a> Decoder<'a> {
             0xE5 => Push(Register16::HL),
             0xE6 => AndImmediate8(immediate_8?),
             0xE7 => Reset(ResetVector::Four),
-            0xE8 => AddSPImmediate(immediate_8? as i8),
+            0xE8 => AddSPImmediate(immediate_8?),
             0xE9 => JumpHL,
             0xEA => LoadIndirectImmediate16A(immediate_16?),
             0xEE => XorImmediate8(immediate_8?),
@@ -180,7 +180,7 @@ impl<'a> Decoder<'a> {
             0xF5 => Push(Register16::AF),
             0xF6 => OrImmediate8(immediate_8?),
             0xF7 => Reset(ResetVector::Six),
-            0xF8 => LoadHLSPImmediate(immediate_8? as i8),
+            0xF8 => LoadHLSPImmediate(immediate_8?),
             0xF9 => LoadSPHL,
             0xFA => LoadAIndirectImmediate16(immediate_16?),
             0xFB => EI,
@@ -226,12 +226,16 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn read_immediate_8(&self, start_pc: u16) -> RawResult<u8> {
-        self.bus.read_byte(start_pc.wrapping_add(1))
+    fn read_immediate_8(&self, start_pc: u16) -> RawResult<Immediate8> {
+        Ok(Immediate8 (
+             self.bus.read_byte(start_pc.wrapping_add(1))?
+        ))
     }
 
-    fn read_immediate_16(&self, start_pc: u16) -> RawResult<u16> {
-        self.bus.read_word(start_pc.wrapping_add(1))
+    fn read_immediate_16(&self, start_pc: u16) -> RawResult<Immediate16> {
+        Ok(Immediate16 (
+            self.bus.read_word(start_pc.wrapping_add(1))?
+        ))
     }
 }
 

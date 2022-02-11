@@ -19,9 +19,10 @@ use crate::components::interrupt_controller::InterruptController;
 use crate::components::sound::Sound;
 use crate::components::timer::Timer;
 use crate::components::wram::WorkRam;
-use crate::execution::instructions::Instruction;
 use crate::execution::{execute_instruction, fetch_and_decode};
 pub use components::cartridge::parse_into_cartridge;
+pub use execution::instructions::{Instruction, CommonRegister, JumpCondition, ResetVector};
+pub use components::cpu::{Register8, Register16};
 
 pub type RawResult<T> = std::result::Result<T, GameBoyError>;
 
@@ -88,9 +89,9 @@ impl std::fmt::Display for ExecutionContext {
             write!(f, " ")?
         }
         writeln!(f)?;
-        writeln!(
+        write!(
             f,
-            "Instruction: {:?} (bytes: {}, cycles: {})",
+            "Instruction: {} (bytes: {}, cycles: {})",
             self.instruction,
             self.instruction.bytes(),
             self.instruction.cycles()

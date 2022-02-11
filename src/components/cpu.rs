@@ -1,4 +1,6 @@
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+use strum_macros::Display;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
 pub enum Register8 {
     A,
     B,
@@ -9,7 +11,7 @@ pub enum Register8 {
     L,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
 pub enum Register16 {
     AF,
     BC,
@@ -54,9 +56,9 @@ impl std::fmt::Display for Cpu {
         writeln!(f, "state: {}", self.state)?;
 
         if self.interrupt_master_enable {
-            writeln!(f, "interrupts enabled")?;
+            write!(f, "interrupts enabled")?;
         } else {
-            writeln!(f, "interrupts disabled")?;
+            write!(f, "interrupts disabled")?;
         }
 
         Ok(())
