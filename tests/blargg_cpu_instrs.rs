@@ -21,7 +21,7 @@ blargg_test!("03");
 blargg_test!("04");
 blargg_test!("05");
 blargg_test!("06");
-// blargg_test!("07");
+blargg_test!("07");
 blargg_test!("08");
 blargg_test!("09");
 blargg_test!("10");
@@ -39,18 +39,26 @@ fn load_rom(prefix: &str) -> Vec<u8> {
     fs::read(file).unwrap()
 }
 
+const MAX_STEPS: usize = 10_000_000;
+
 fn execute_test(rom: Vec<u8>) {
     let cartridge = parse_into_cartridge(rom);
 
     let mut gb = GameBoy::new(cartridge);
 
     let mut serial_out: Vec<_> = Vec::with_capacity(256);
+    let mut step_counter = 0;
 
     loop {
-        gb.step(false).map_err(|e| e.to_string()).unwrap();
-        gb.get_serial().unwrap().into_iter().for_each(|c| {
-            serial_out.push(c);
-        });
+        if step_counter > MAX_STEPS {
+            let take = serial_out.len().min(100);
+            panic!("Test went over step limit! Got partial serial: {}", String::from_utf8_lossy(&serial_out[0..take]))
+        }
+        step_counter += 1;
+        let step_result = gb.step().map_err(|e| e.to_string()).unwrap();
+        if let Some(serial) = step_result.serial_byte {
+            serial_out.push(serial);
+        }
         if serial_out.ends_with("Failed".as_bytes()) {
             panic!("{}", String::from_utf8_lossy(&serial_out))
         }

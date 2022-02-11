@@ -13,6 +13,10 @@ impl InterruptController {
             interrupt_enable: 0,
         }
     }
+
+    pub fn set_serial_interrupt(&mut self) {
+        self.interrupt_flags |= 0b00000100
+    }
 }
 
 impl Default for InterruptController {

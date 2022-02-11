@@ -1,7 +1,8 @@
-use crate::ByteAddressable;
+use crate::{ByteAddressable, InterruptController};
 
 use crate::GameBoyError;
 use crate::RawResult;
+
 pub struct Serial {
     sb: u8,
     sc: u8,
@@ -10,6 +11,21 @@ pub struct Serial {
 impl Serial {
     pub fn new() -> Self {
         Self { sb: 0, sc: 0 }
+    }
+
+    pub fn step(&mut self, _cycles: usize, interrupt_controller: &mut InterruptController) -> Option<u8> {
+        if self.sc == 0x80 {
+            todo!("External clock")
+        }
+
+        if self.sc == 0x81 {
+            self.sc = 0x01;
+            interrupt_controller.set_serial_interrupt();
+            Some(self.sb)
+        } else {
+            None
+        }
+
     }
 }
 
@@ -39,7 +55,7 @@ impl ByteAddressable for Serial {
                 return Err(GameBoyError::NonMappedAddress {
                     address,
                     description: "Serial write",
-                })
+                });
             }
         };
         Ok(())

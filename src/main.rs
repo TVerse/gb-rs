@@ -1,4 +1,4 @@
-use gb_rs::{parse_into_cartridge, GameBoy, Result};
+use gb_rs::{parse_into_cartridge, GameBoy};
 use simplelog::*;
 use std::env;
 use std::fs;
@@ -34,11 +34,14 @@ fn main() {
 
     let mut serial_out: Vec<_> = "".bytes().collect();
 
-    let in_step = false;
+    let mut in_step = false;
 
     loop {
-        match step(&mut gb, &mut serial_out, in_step) {
-            Ok(_counter) => {
+        match gb.step() {
+            Ok(res) => {
+                if let Some(serial) = res.serial_byte {
+                    serial_out.push(serial);
+                }
                 if serial_out.ends_with("Failed".as_bytes())
                     || serial_out.ends_with("Passed".as_bytes())
                     || serial_out.ends_with("Done".as_bytes())
@@ -47,6 +50,8 @@ fn main() {
                     break;
                 }
                 if in_step {
+                    log::info!("Context:\n{}", res.execution_context);
+                    log::info!("Cpu: {}", gb.cpu);
                     std::io::stdin().read_line(&mut String::new()).unwrap();
                 }
             }
@@ -57,16 +62,6 @@ fn main() {
             }
         }
     }
-}
-
-fn step(gb: &mut GameBoy, serial_out: &mut Vec<u8>, verbose: bool) -> Result<u64> {
-    let counter = gb.step(verbose)?;
-    gb.get_serial().unwrap().into_iter().for_each(|c| {
-        serial_out.push(c);
-        // log::info!("Raw serial out: {:?}", serial_out);
-        // log::info!("Serial out: {}", String::from_utf8_lossy(serial_out));
-    });
-    Ok(counter)
 }
 
 fn load_rom<P: AsRef<Path>>(path: P) -> Vec<u8> {

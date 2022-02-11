@@ -20,7 +20,7 @@ use crate::components::sound::Sound;
 use crate::components::timer::Timer;
 use crate::components::wram::WorkRam;
 use crate::execution::instructions::Instruction;
-use crate::execution::{execute, fetch_and_decode, DecodeContext, DecodeResult};
+use crate::execution::{execute_instruction, fetch_and_decode};
 pub use components::cartridge::parse_into_cartridge;
 
 pub type RawResult<T> = std::result::Result<T, GameBoyError>;
@@ -32,13 +32,17 @@ const KIB: usize = 1024;
 #[derive(Error, Debug)]
 pub struct GameBoyExecutionError {
     error: GameBoyError,
-    execution_context: ExecutionContext,
+    execution_context: Option<ExecutionContext>,
 }
 
 impl std::fmt::Display for GameBoyExecutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Error: {}", self.error)?;
-        write!(f, "Context: {}", self.execution_context)
+        if let Some(ref context) = self.execution_context {
+            write!(f, "Context: {}", context)
+        } else {
+            write!(f, "No context available")
+        }
     }
 }
 
@@ -53,21 +57,12 @@ pub enum GameBoyError {
     InvalidOpcode { opcode: u8, pc: u16 },
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub struct ExecutionContext {
-    pub pc: u16,
-    pub three_bytes_before_pc: [Option<u8>; 3],
-    pub three_bytes_at_pc: [Option<u8>; 3],
-    pub cpu: Cpu,
-    pub instruction: Option<Instruction>,
-}
-
-pub struct BorrowedExecutionContext<'a> {
-    pub pc: u16,
-    pub three_bytes_before_pc: [Option<u8>; 3],
-    pub three_bytes_at_pc: [Option<u8>; 3],
-    pub cpu: &'a Cpu,
     pub instruction: Instruction,
+    pub pc: u16,
+    pub three_bytes_before_pc: [Option<u8>; 3],
+    pub three_bytes_at_pc: [Option<u8>; 3],
 }
 
 impl std::fmt::Display for ExecutionContext {
@@ -93,20 +88,19 @@ impl std::fmt::Display for ExecutionContext {
             write!(f, " ")?
         }
         writeln!(f)?;
-        if let Some(i) = self.instruction {
-            writeln!(
-                f,
-                "Instruction: {:?} (bytes: {}, cycles: {})",
-                i,
-                i.bytes(),
-                i.cycles()
-            )?;
-        } else {
-            writeln!(f, "Instruction: unknown")?;
-        }
-        writeln!(f, "CPU state (possibly partially through executing!):")?;
-        write!(f, "{}", self.cpu)
+        writeln!(
+            f,
+            "Instruction: {:?} (bytes: {}, cycles: {})",
+            self.instruction,
+            self.instruction.bytes(),
+            self.instruction.cycles()
+        )
     }
+}
+
+pub struct StepResult {
+    pub execution_context: ExecutionContext,
+    pub serial_byte: Option<u8>,
 }
 
 pub struct GameBoy {
@@ -138,25 +132,7 @@ impl GameBoy {
         }
     }
 
-    fn with_context(
-        &self,
-        error: GameBoyError,
-        context: &DecodeContext,
-        instruction: RawResult<Instruction>,
-    ) -> GameBoyExecutionError {
-        GameBoyExecutionError {
-            error,
-            execution_context: ExecutionContext {
-                pc: context.pc,
-                three_bytes_before_pc: context.three_bytes_before_pc,
-                three_bytes_at_pc: context.three_bytes_at_pc,
-                cpu: self.cpu.clone(),
-                instruction: instruction.ok(),
-            },
-        }
-    }
-
-    pub fn step(&mut self, verbose: bool) -> Result<u64> {
+    pub fn step(&mut self) -> Result<StepResult> {
         let mut bus = RealBus {
             cartridge: self.cartridge.as_mut(),
             ppu: &mut self.ppu,
@@ -169,47 +145,32 @@ impl GameBoy {
             controller: &mut self.controller,
         };
 
-        let DecodeResult {
-            instruction,
-            context,
-        } = fetch_and_decode(&self.cpu, &bus);
-        // let testing_instruction = self.cpu.get_register16(Register16::PC) == 0xDEF8;
-        // if testing_instruction {
-        //     log::info!("About to test instruction {:?}", instruction.clone().unwrap());
-        //     log::info!("CPU before:\n{}", self.cpu);
-        // }
-        let _cycles = instruction
-            .clone()
-            .and_then(|i| execute(&mut self.cpu, &mut bus, i))
-            .map_err(|e| self.with_context(e, &context, instruction.clone()))?;
-        // if testing_instruction {
-        //     log::info!("CPU after:\n{}", self.cpu)
-        // }
-        if verbose {
-            log::info!(
-                "Execution context:\n{}",
-                ExecutionContext {
-                    pc: context.pc,
-                    three_bytes_before_pc: context.three_bytes_before_pc,
-                    three_bytes_at_pc: context.three_bytes_at_pc,
-                    cpu: self.cpu.clone(),
-                    instruction: instruction.ok(),
-                }
-            );
-        }
-        Ok(self.cpu.get_instruction_counter())
-    }
+        let decode_context = fetch_and_decode(&self.cpu, &bus).map_err(|error| GameBoyExecutionError {
+            error,
+            execution_context: None,
+        })?;
 
-    pub fn get_serial(&mut self) -> RawResult<Option<u8>> {
-        if self.serial.read_byte(0xFF02)? == 0x81 {
-            self.serial.write_byte(0xFF02, 0x01)?;
-            self.interrupt_controller
-                .write_byte(0xFF0F, self.interrupt_controller.read_byte(0xFF0F)? | 0x04)?;
+        let cycles = execute_instruction(&mut self.cpu, &mut bus, decode_context.instruction).map_err(|error| GameBoyExecutionError {
+            error,
+            execution_context: Some(ExecutionContext {
+                instruction: decode_context.instruction,
+                pc: decode_context.pc,
+                three_bytes_before_pc: decode_context.three_bytes_before_pc,
+                three_bytes_at_pc: decode_context.three_bytes_at_pc,
+            }),
+        })?;
 
-            Ok(Some(self.serial.read_byte(0xFF01)?))
-        } else {
-            Ok(None)
-        }
+        let serial_byte = self.serial.step(cycles, &mut self.interrupt_controller);
+
+        Ok(StepResult {
+            execution_context: ExecutionContext {
+                instruction: decode_context.instruction,
+                pc: decode_context.pc,
+                three_bytes_before_pc: decode_context.three_bytes_before_pc,
+                three_bytes_at_pc: decode_context.three_bytes_at_pc,
+            },
+            serial_byte
+        })
     }
 
     pub fn dump(&self, base: &str) {
@@ -218,11 +179,7 @@ impl GameBoy {
             fs::create_dir(p).unwrap();
         }
 
-        log::info!(
-            "Dumping, instruction {}",
-            self.cpu.get_instruction_counter()
-        );
-
+        log::info!("Dumping...");
         fs::write(format!("{}/cpu.txt", base), format!("{}", self.cpu)).unwrap();
         fs::write(format!("{}/work_ram.bin", base), self.work_ram.raw()).unwrap();
         fs::write(format!("{}/high_ram.bin", base), self.high_ram.raw()).unwrap();

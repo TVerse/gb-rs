@@ -4,23 +4,16 @@ use crate::execution::instructions::{CommonRegister, Instruction, JumpCondition,
 use crate::{GameBoyError, RawResult};
 use Instruction::*;
 
-pub struct DecodeResult {
-    pub instruction: RawResult<Instruction>,
-    pub context: DecodeContext,
-}
-
 pub struct DecodeContext {
+    pub instruction: Instruction,
     pub pc: u16,
     pub three_bytes_at_pc: [Option<u8>; 3],
     pub three_bytes_before_pc: [Option<u8>; 3],
 }
 
-pub fn fetch_and_decode(cpu: &Cpu, bus: &dyn Bus) -> DecodeResult {
+pub fn fetch_and_decode(cpu: &Cpu, bus: &dyn Bus) -> RawResult<DecodeContext> {
     let decoder = Decoder { cpu, bus };
-    DecodeResult {
-        instruction: decoder.decode(),
-        context: decoder.get_context(),
-    }
+    decoder.decode()
 }
 
 struct Decoder<'a> {
@@ -29,7 +22,7 @@ struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    fn get_context(&self) -> DecodeContext {
+    fn decode(&self) -> RawResult<DecodeContext> {
         let pc = self.cpu.get_register16(Register16::PC);
         let three_bytes_at_pc = [
             self.bus.read_byte(pc).ok(),
@@ -43,17 +36,13 @@ impl<'a> Decoder<'a> {
             self.bus.read_byte(pc.wrapping_sub(1)).ok(),
         ];
 
-        DecodeContext {
+        let instruction = self.decode_pc_override(pc)?;
+        Ok(DecodeContext {
+            instruction,
             pc,
             three_bytes_at_pc,
             three_bytes_before_pc,
-        }
-    }
-
-    fn decode(&self) -> RawResult<Instruction> {
-        let start_pc = self.cpu.get_register16(Register16::PC);
-
-        self.decode_pc_override(start_pc)
+        })
     }
 
     fn decode_pc_override(&self, start_pc: u16) -> RawResult<Instruction> {
@@ -201,7 +190,7 @@ impl<'a> Decoder<'a> {
                 return Err(GameBoyError::InvalidOpcode {
                     opcode,
                     pc: start_pc,
-                })
+                });
             }
         };
 
@@ -257,7 +246,7 @@ mod tests {
         let bus = FlatBus {
             mem: vec![0xCB, 0x40],
         };
-        let instr = fetch_and_decode(&cpu, &bus).instruction.unwrap();
+        let instr = fetch_and_decode(&cpu, &bus).unwrap().instruction;
         assert_eq!(
             instr,
             BitRegister(0, CommonRegister::Register8(Register8::B))

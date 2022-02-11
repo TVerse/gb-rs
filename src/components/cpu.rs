@@ -34,7 +34,6 @@ pub struct Cpu {
     state: State,
     interrupt_master_enable: bool,
     in_enable_interrupt_delay: bool,
-    instruction_counter: u64,
 }
 
 impl std::fmt::Display for Cpu {
@@ -59,8 +58,6 @@ impl std::fmt::Display for Cpu {
         } else {
             writeln!(f, "interrupts disabled")?;
         }
-
-        write!(f, "instruction counter: {}", self.instruction_counter)?;
 
         Ok(())
     }
@@ -92,7 +89,6 @@ impl Cpu {
             state: State::Running,
             interrupt_master_enable: false,
             in_enable_interrupt_delay: false,
-            instruction_counter: 0,
         }
     }
 
@@ -219,14 +215,6 @@ impl Cpu {
 
     pub fn set_flags(&mut self, f: Flags) {
         self.flags = f;
-    }
-
-    pub fn get_instruction_counter(&self) -> u64 {
-        self.instruction_counter
-    }
-
-    pub fn complete_instruction(&mut self) {
-        self.instruction_counter = self.instruction_counter.wrapping_add(1)
     }
 }
 

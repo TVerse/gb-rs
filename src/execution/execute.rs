@@ -5,7 +5,7 @@ use crate::RawResult;
 
 // 16-bit H/C is weird https://stackoverflow.com/a/57981912
 
-pub fn execute(cpu: &mut Cpu, bus: &mut dyn Bus, instruction: Instruction) -> RawResult<usize> {
+pub fn execute_instruction(cpu: &mut Cpu, bus: &mut dyn Bus, instruction: Instruction) -> RawResult<usize> {
     let mut executor = Executor { cpu, bus };
     executor.execute(instruction)
 }
@@ -150,7 +150,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::SubCarryImmediate8(b) => {
                 let a = self.cpu.get_register8(Register8::A);
-                let res = self.sub_8_set_flags(a, b, false);
+                let res = self.sub_8_set_flags(a, b, true);
                 self.cpu.edit_flags(None, Some(true), None, None);
                 self.cpu.set_register8(Register8::A, res);
             }
@@ -227,13 +227,21 @@ impl<'a> Executor<'a> {
                 let res = self.add_i8_to_sp_and_set_flags(i);
                 self.cpu.set_register16(Register16::HL, res);
             }
-            Instruction::RotateALeft => self.rl(CommonRegister::Register8(Register8::A))?,
+            Instruction::RotateALeft => {
+                self.rlc(CommonRegister::Register8(Register8::A))?;
+                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
+            },
             Instruction::RotateALeftThroughCarry => {
-                self.rlc(CommonRegister::Register8(Register8::A))?
+                self.rl(CommonRegister::Register8(Register8::A))?;
+                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
             }
-            Instruction::RotateARight => self.rr(CommonRegister::Register8(Register8::A))?,
+            Instruction::RotateARight => {
+                self.rrc(CommonRegister::Register8(Register8::A))?;
+                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
+            },
             Instruction::RotateARightThroughCarry => {
-                self.rrc(CommonRegister::Register8(Register8::A))?
+                self.rr(CommonRegister::Register8(Register8::A))?;
+                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
             }
             Instruction::RotateLeftRegister(r) => self.rlc(r)?,
             Instruction::RotateLeftThroughCarryRegister(r) => self.rl(r)?,
@@ -328,8 +336,6 @@ impl<'a> Executor<'a> {
         } else {
             instruction.cycles()
         };
-
-        self.cpu.complete_instruction();
 
         Ok(cycles)
     }
@@ -476,9 +482,9 @@ impl<'a> Executor<'a> {
         let result = (a as i16).wrapping_sub(b as i16).wrapping_sub(carry);
         let c = result < 0x00;
         let z = result == 0;
-        // TODO H
+        let h = ((a & 0x0F) as i8).wrapping_sub((b & 0x0F) as i8) < 0x00;
         self.cpu
-            .edit_flags(Some(z), Some(true), Some(false), Some(c));
+            .edit_flags(Some(z), Some(true), Some(h), Some(c));
         result as u8
     }
 
@@ -601,7 +607,7 @@ mod tests {
         let mut bus = FlatBus {
             mem: vec![0x00, 0x00],
         };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
 
         assert_eq!(cpu.get_register16(Register16::PC), 0x5050, "pc");
         assert_eq!(cpu.get_register16(Register16::SP), 0x00, "sp");
@@ -619,7 +625,7 @@ mod tests {
         let mut bus = FlatBus {
             mem: vec![0x00, 0x00, 0x00, 0x00, 0xAB],
         };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
 
         assert_eq!(cpu.get_register8(Register8::C), 0xAB, "c");
         assert_eq!(cpu.get_register16(Register16::PC), 0x0001, "pc");
@@ -632,7 +638,7 @@ mod tests {
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::HL, 0x0004);
         let mut bus = FlatBus { mem: vec![] };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
 
         assert_eq!(cpu.get_register8(Register8::D), 0xBA, "d");
         assert_eq!(cpu.get_register16(Register16::PC), 0x0002, "pc");
@@ -647,9 +653,80 @@ mod tests {
         let mut bus = FlatBus {
             mem: vec![0x00, 0x00, 0x00, 0x00, 0x00],
         };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
 
         assert_eq!(bus.read_byte(0x04).unwrap(), 0xFF, "mem")
+    }
+
+    #[test]
+    fn load_indirect_immediate_16_a() {
+        let instruction = Instruction::LoadIndirectImmediate16A(0x0002);
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0x55);
+        let mut bus = FlatBus {
+            mem: vec![0x00, 0x00, 0x04],
+        };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+
+        assert_eq!(bus.read_byte(0x0002).unwrap(), 0x55, "a")
+    }
+
+    #[test]
+    fn load_a_hl_increment() {
+        let instruction = Instruction::LoadAIncrementHLIndirect;
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::HL, 0x0002);
+        let mut bus = FlatBus {
+            mem: vec![0x00, 0x00, 0x04],
+        };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+
+        assert_eq!(cpu.get_register8(Register8::A), 0x04, "a");
+        assert_eq!(cpu.get_register16(Register16::HL), 0x0003, "hl");
+    }
+
+    #[test]
+    fn load_a_hl_decrement() {
+        let instruction = Instruction::LoadADecrementHLIndirect;
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::HL, 0x0002);
+        let mut bus = FlatBus {
+            mem: vec![0x00, 0x00, 0x04],
+        };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+
+        assert_eq!(cpu.get_register8(Register8::A), 0x04, "a");
+        assert_eq!(cpu.get_register16(Register16::HL), 0x0001, "hl");
+    }
+
+    #[test]
+    fn load_hl_increment_a() {
+        let instruction = Instruction::LoadIncrementHLIndirectA;
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::HL, 0x0002);
+        cpu.set_register8(Register8::A, 0x55);
+        let mut bus = FlatBus {
+            mem: vec![0x00, 0x00, 0x04],
+        };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+
+        assert_eq!(bus.read_byte(0x0002).unwrap(), 0x55, "mem");
+        assert_eq!(cpu.get_register16(Register16::HL), 0x0003, "hl");
+    }
+
+    #[test]
+    fn load_hl_decrement_a() {
+        let instruction = Instruction::LoadDecrementHLAIndirect;
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::HL, 0x0002);
+        cpu.set_register8(Register8::A, 0x55);
+        let mut bus = FlatBus {
+            mem: vec![0x00, 0x00, 0x04],
+        };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+
+        assert_eq!(bus.read_byte(0x0002).unwrap(), 0x55, "mem");
+        assert_eq!(cpu.get_register16(Register16::HL), 0x0001, "hl");
     }
 
     #[test]
@@ -657,7 +734,7 @@ mod tests {
         let instruction = Instruction::IncRegister16(Register16::BC);
         let mut cpu = Cpu::zeroed();
         let mut bus = FlatBus { mem: vec![] };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::BC), 1, "bc");
     }
 
@@ -666,7 +743,7 @@ mod tests {
         let instruction = Instruction::BitRegister(0, CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         let mut bus = FlatBus { mem: vec![] };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(
             cpu.get_flags(),
             &Flags {
@@ -684,7 +761,7 @@ mod tests {
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0x01);
         let mut bus = FlatBus { mem: vec![] };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(
             cpu.get_flags(),
             &Flags {
@@ -698,13 +775,153 @@ mod tests {
     }
 
     #[test]
-    fn rlc_b() {
+    fn rl_b() {
         let instruction = Instruction::RotateLeftRegister(CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0xAA);
         let mut bus = FlatBus { mem: vec![] };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::B), 0x55, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn rlc_b() {
+        let instruction = Instruction::RotateLeftThroughCarryRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0xAA);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0x54, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn rr_b() {
+        let instruction = Instruction::RotateRightRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0x55);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0xAA, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn rrc_b() {
+        let instruction = Instruction::RotateRightThroughCarryRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0x55);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0x2A, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn sla_b() {
+        let instruction = Instruction::ShiftLeftRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0xAA);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0x54, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn sra_b_negative() {
+        let instruction = Instruction::ShiftRightArithmeticRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0xA5);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0xD2, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn sra_b_positive() {
+        let instruction = Instruction::ShiftRightArithmeticRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0x55);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0x2A, "b");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: false,
+                h: false,
+                c: true
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn srl_b() {
+        let instruction = Instruction::ShiftRightLogicalRegister(CommonRegister::Register8(Register8::B));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::B, 0x55);
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::B), 0x2A, "b");
         assert_eq!(
             cpu.get_flags(),
             &Flags {
@@ -726,7 +943,7 @@ mod tests {
         let mut bus = FlatBus {
             mem: vec![0x00, 0x00, 0x5A],
         };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 0x0F, "a");
         assert_eq!(
             cpu.get_flags(),
@@ -749,9 +966,29 @@ mod tests {
         let mut bus = FlatBus {
             mem: vec![0x00, 0x00, 0x00],
         };
-        execute(&mut cpu, &mut bus, instruction).unwrap();
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::PC), 0x1234, "pc");
         assert_eq!(cpu.get_register16(Register16::SP), 0x0000, "sp");
         assert_eq!(bus.read_word(0x0000).unwrap(), 0xAAAA + 3, "at sp");
     }
+
+    #[test]
+    fn push_pop() {
+        let instruction = Instruction::Push(Register16::HL);
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::HL, 0x1234);
+        cpu.set_register16(Register16::SP, 0x0002);
+        let mut bus = FlatBus {
+            mem: vec![0x00, 0x00]
+        };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register16(Register16::SP), 0x0000, "sp");
+        assert_eq!(bus.read_word(0x0000).unwrap(), 0x1234, "mem");
+
+        let instruction = Instruction::Pop(Register16::BC);
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register16(Register16::BC), 0x1234, "bc");
+    }
+
+
 }
