@@ -5,7 +5,11 @@ use crate::RawResult;
 
 // 16-bit H/C is weird https://stackoverflow.com/a/57981912
 
-pub fn execute_instruction(cpu: &mut Cpu, bus: &mut dyn Bus, instruction: Instruction) -> RawResult<usize> {
+pub fn execute_instruction(
+    cpu: &mut Cpu,
+    bus: &mut dyn Bus,
+    instruction: Instruction,
+) -> RawResult<usize> {
     let mut executor = Executor { cpu, bus };
     executor.execute(instruction)
 }
@@ -229,19 +233,23 @@ impl<'a> Executor<'a> {
             }
             Instruction::RotateALeft => {
                 self.rlc(CommonRegister::Register8(Register8::A))?;
-                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
-            },
+                self.cpu
+                    .edit_flags(Some(false), Some(false), Some(false), None);
+            }
             Instruction::RotateALeftThroughCarry => {
                 self.rl(CommonRegister::Register8(Register8::A))?;
-                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
+                self.cpu
+                    .edit_flags(Some(false), Some(false), Some(false), None);
             }
             Instruction::RotateARight => {
                 self.rrc(CommonRegister::Register8(Register8::A))?;
-                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
-            },
+                self.cpu
+                    .edit_flags(Some(false), Some(false), Some(false), None);
+            }
             Instruction::RotateARightThroughCarry => {
                 self.rr(CommonRegister::Register8(Register8::A))?;
-                self.cpu.edit_flags(Some(false), Some(false), Some(false), None);
+                self.cpu
+                    .edit_flags(Some(false), Some(false), Some(false), None);
             }
             Instruction::RotateLeftRegister(r) => self.rlc(r)?,
             Instruction::RotateLeftThroughCarryRegister(r) => self.rl(r)?,
@@ -332,7 +340,9 @@ impl<'a> Executor<'a> {
         }
 
         let cycles = if conditional_branch_not_taken {
-            instruction.cycles_branch_not_taken().expect("Called cycles_branch_not_taken on an incompatible instruction")
+            instruction
+                .cycles_branch_not_taken()
+                .expect("Called cycles_branch_not_taken on an incompatible instruction")
         } else {
             instruction.cycles()
         };
@@ -483,8 +493,7 @@ impl<'a> Executor<'a> {
         let c = result < 0x00;
         let z = result == 0;
         let h = ((a & 0x0F) as i8).wrapping_sub((b & 0x0F) as i8) < 0x00;
-        self.cpu
-            .edit_flags(Some(z), Some(true), Some(h), Some(c));
+        self.cpu.edit_flags(Some(z), Some(true), Some(h), Some(c));
         result as u8
     }
 
@@ -634,8 +643,10 @@ mod tests {
 
     #[test]
     fn load_register_immediate8() {
-        let instruction =
-            Instruction::LoadRegisterImmediate8(CommonRegister::Register8(Register8::D), Immediate8(0xBA));
+        let instruction = Instruction::LoadRegisterImmediate8(
+            CommonRegister::Register8(Register8::D),
+            Immediate8(0xBA),
+        );
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::HL, 0x0004);
         let mut bus = FlatBus { mem: vec![] };
@@ -797,7 +808,8 @@ mod tests {
 
     #[test]
     fn rlc_b() {
-        let instruction = Instruction::RotateLeftThroughCarryRegister(CommonRegister::Register8(Register8::B));
+        let instruction =
+            Instruction::RotateLeftThroughCarryRegister(CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0xAA);
         let mut bus = FlatBus { mem: vec![] };
@@ -837,7 +849,8 @@ mod tests {
 
     #[test]
     fn rrc_b() {
-        let instruction = Instruction::RotateRightThroughCarryRegister(CommonRegister::Register8(Register8::B));
+        let instruction =
+            Instruction::RotateRightThroughCarryRegister(CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0x55);
         let mut bus = FlatBus { mem: vec![] };
@@ -877,7 +890,8 @@ mod tests {
 
     #[test]
     fn sra_b_negative() {
-        let instruction = Instruction::ShiftRightArithmeticRegister(CommonRegister::Register8(Register8::B));
+        let instruction =
+            Instruction::ShiftRightArithmeticRegister(CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0xA5);
         let mut bus = FlatBus { mem: vec![] };
@@ -897,7 +911,8 @@ mod tests {
 
     #[test]
     fn sra_b_positive() {
-        let instruction = Instruction::ShiftRightArithmeticRegister(CommonRegister::Register8(Register8::B));
+        let instruction =
+            Instruction::ShiftRightArithmeticRegister(CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0x55);
         let mut bus = FlatBus { mem: vec![] };
@@ -917,7 +932,8 @@ mod tests {
 
     #[test]
     fn srl_b() {
-        let instruction = Instruction::ShiftRightLogicalRegister(CommonRegister::Register8(Register8::B));
+        let instruction =
+            Instruction::ShiftRightLogicalRegister(CommonRegister::Register8(Register8::B));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::B, 0x55);
         let mut bus = FlatBus { mem: vec![] };
@@ -980,7 +996,7 @@ mod tests {
         cpu.set_register16(Register16::HL, 0x1234);
         cpu.set_register16(Register16::SP, 0x0002);
         let mut bus = FlatBus {
-            mem: vec![0x00, 0x00]
+            mem: vec![0x00, 0x00],
         };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::SP), 0x0000, "sp");
@@ -990,6 +1006,4 @@ mod tests {
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::BC), 0x1234, "bc");
     }
-
-
 }

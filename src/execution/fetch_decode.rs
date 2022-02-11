@@ -1,6 +1,8 @@
 use crate::components::bus::Bus;
 use crate::components::cpu::{Cpu, Register16, Register8};
-use crate::execution::instructions::{CommonRegister, Immediate16, Immediate8, Instruction, JumpCondition, ResetVector};
+use crate::execution::instructions::{
+    CommonRegister, Immediate16, Immediate8, Instruction, JumpCondition, ResetVector,
+};
 use crate::{GameBoyError, RawResult};
 use Instruction::*;
 
@@ -227,15 +229,11 @@ impl<'a> Decoder<'a> {
     }
 
     fn read_immediate_8(&self, start_pc: u16) -> RawResult<Immediate8> {
-        Ok(Immediate8 (
-             self.bus.read_byte(start_pc.wrapping_add(1))?
-        ))
+        Ok(Immediate8(self.bus.read_byte(start_pc.wrapping_add(1))?))
     }
 
     fn read_immediate_16(&self, start_pc: u16) -> RawResult<Immediate16> {
-        Ok(Immediate16 (
-            self.bus.read_word(start_pc.wrapping_add(1))?
-        ))
+        Ok(Immediate16(self.bus.read_word(start_pc.wrapping_add(1))?))
     }
 }
 

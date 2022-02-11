@@ -316,8 +316,7 @@ impl Instruction {
             Instruction::JumpConditionalRelative(_, _) => Some(2),
             Instruction::CallConditionalImmediate(_, _) => Some(3),
             Instruction::ReturnConditional(_) => Some(2),
-            _ => None
-
+            _ => None,
         }
     }
 

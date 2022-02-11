@@ -13,7 +13,11 @@ impl Serial {
         Self { sb: 0, sc: 0 }
     }
 
-    pub fn step(&mut self, _cycles: usize, interrupt_controller: &mut InterruptController) -> Option<u8> {
+    pub fn step(
+        &mut self,
+        _cycles: usize,
+        interrupt_controller: &mut InterruptController,
+    ) -> Option<u8> {
         if self.sc == 0x80 {
             todo!("External clock")
         }
@@ -25,7 +29,6 @@ impl Serial {
         } else {
             None
         }
-
     }
 }
 

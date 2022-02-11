@@ -6,7 +6,8 @@ use std::fs::File;
 use std::path::Path;
 
 fn main() {
-    let default_path: String = "gb-test-roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb".to_owned();
+    let default_path: String =
+        "gb-test-roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,

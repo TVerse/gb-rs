@@ -52,7 +52,11 @@ fn execute_test(rom: Vec<u8>) {
     loop {
         if step_counter > MAX_STEPS {
             let take = serial_out.len().min(100);
-            panic!("Test went over step limit! Got partial serial: {}", String::from_utf8_lossy(&serial_out[0..take]))
+            panic!(
+                "Test went over step limit! Got partial serial ({} characters): {}",
+                take,
+                String::from_utf8_lossy(&serial_out[0..take])
+            )
         }
         step_counter += 1;
         let step_result = gb.step().map_err(|e| e.to_string()).unwrap();

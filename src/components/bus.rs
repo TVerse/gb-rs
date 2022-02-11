@@ -113,7 +113,9 @@ mod tests {
 
     #[test]
     fn little_endian_reads() {
-        let bus = FlatBus { mem: vec![0x34, 0x12]};
+        let bus = FlatBus {
+            mem: vec![0x34, 0x12],
+        };
 
         assert_eq!(bus.read_word(0x0000).unwrap(), 0x1234);
     }

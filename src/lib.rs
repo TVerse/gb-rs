@@ -21,8 +21,8 @@ use crate::components::timer::Timer;
 use crate::components::wram::WorkRam;
 use crate::execution::{execute_instruction, fetch_and_decode};
 pub use components::cartridge::parse_into_cartridge;
-pub use execution::instructions::{Instruction, CommonRegister, JumpCondition, ResetVector};
-pub use components::cpu::{Register8, Register16};
+pub use components::cpu::{Register16, Register8};
+pub use execution::instructions::{CommonRegister, Instruction, JumpCondition, ResetVector};
 
 pub type RawResult<T> = std::result::Result<T, GameBoyError>;
 
@@ -146,20 +146,22 @@ impl GameBoy {
             controller: &mut self.controller,
         };
 
-        let decode_context = fetch_and_decode(&self.cpu, &bus).map_err(|error| GameBoyExecutionError {
-            error,
-            execution_context: None,
-        })?;
+        let decode_context =
+            fetch_and_decode(&self.cpu, &bus).map_err(|error| GameBoyExecutionError {
+                error,
+                execution_context: None,
+            })?;
 
-        let cycles = execute_instruction(&mut self.cpu, &mut bus, decode_context.instruction).map_err(|error| GameBoyExecutionError {
-            error,
-            execution_context: Some(ExecutionContext {
-                instruction: decode_context.instruction,
-                pc: decode_context.pc,
-                three_bytes_before_pc: decode_context.three_bytes_before_pc,
-                three_bytes_at_pc: decode_context.three_bytes_at_pc,
-            }),
-        })?;
+        let cycles = execute_instruction(&mut self.cpu, &mut bus, decode_context.instruction)
+            .map_err(|error| GameBoyExecutionError {
+                error,
+                execution_context: Some(ExecutionContext {
+                    instruction: decode_context.instruction,
+                    pc: decode_context.pc,
+                    three_bytes_before_pc: decode_context.three_bytes_before_pc,
+                    three_bytes_at_pc: decode_context.three_bytes_at_pc,
+                }),
+            })?;
 
         let serial_byte = self.serial.step(cycles, &mut self.interrupt_controller);
 
@@ -170,7 +172,7 @@ impl GameBoy {
                 three_bytes_before_pc: decode_context.three_bytes_before_pc,
                 three_bytes_at_pc: decode_context.three_bytes_at_pc,
             },
-            serial_byte
+            serial_byte,
         })
     }
 
