@@ -262,6 +262,7 @@ impl<'a> Executor<'a> {
                 let byte = self.get_common_register(r)?;
                 let byte = (byte >> 4) | (byte << 4);
                 self.set_common_register(r, byte)?;
+                self.cpu.edit_flags(Some(byte == 0), Some(false), Some(false), Some(false))
             }
             Instruction::BitRegister(n, r) => self.bit(r, n)?,
             Instruction::SetRegister(n, r) => self.set(r, n)?,
