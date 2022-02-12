@@ -9,7 +9,7 @@ pub mod ppu;
 pub mod serial;
 pub mod sound;
 pub mod timer;
-pub mod wram;
+pub mod work_ram;
 
 use crate::RawResult;
 

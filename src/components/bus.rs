@@ -5,7 +5,7 @@ use crate::components::ppu::Ppu;
 use crate::components::serial::Serial;
 use crate::components::sound::Sound;
 use crate::components::timer::Timer;
-use crate::components::wram::WorkRam;
+use crate::components::work_ram::WorkRam;
 use crate::components::ByteAddressable;
 
 use crate::components::controller::Controller;

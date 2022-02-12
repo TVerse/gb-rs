@@ -18,7 +18,7 @@ use crate::components::high_ram::HighRam;
 use crate::components::interrupt_controller::InterruptController;
 use crate::components::sound::Sound;
 use crate::components::timer::Timer;
-use crate::components::wram::WorkRam;
+use crate::components::work_ram::WorkRam;
 use crate::execution::{execute_instruction, fetch_and_decode};
 pub use components::cartridge::parse_into_cartridge;
 pub use components::cpu::{Register16, Register8};
@@ -188,6 +188,7 @@ impl GameBoy {
         fs::write(format!("{}/high_ram.bin", base), self.high_ram.raw()).unwrap();
         fs::write(format!("{}/vram.bin", base), self.ppu.vram_raw()).unwrap();
         fs::write(format!("{}/oam.bin", base), self.ppu.oam_raw()).unwrap();
+        log::info!("Dump done!")
     }
 
     pub fn cpu(&self) -> &Cpu {

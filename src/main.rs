@@ -6,8 +6,7 @@ use std::fs::File;
 use std::path::Path;
 
 fn main() {
-    let default_path: String =
-        "gb-test-roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb".to_owned();
+    let default_path: String = "gb-test-roms/cpu_instrs/source/test.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
@@ -40,7 +39,9 @@ fn main() {
     loop {
         match gb.step() {
             Ok(res) => {
-                if res.execution_context.pc == 0xc656 {
+                // let breakpoints: &[u16] = &[0xC78D];
+                let breakpoints: &[u16] = &[];
+                if breakpoints.contains(&res.execution_context.pc) {
                     in_step = true;
                 }
                 if let Some(serial) = res.serial_byte {
@@ -51,15 +52,23 @@ fn main() {
                     || serial_out.ends_with("Done".as_bytes())
                 {
                     log::info!("Serial out: {}", String::from_utf8_lossy(&serial_out));
+                    gb.dump("dump_done");
                     break;
                 }
                 if in_step {
                     log::info!("Context:\n{}", res.execution_context);
                     log::info!("Cpu:\n{}", gb.cpu);
                     let mut read = String::with_capacity(1);
-                    std::io::stdin().read_line(&mut read).unwrap();
-                    if read.contains('c') {
-                        in_step = false;
+                    loop {
+                        std::io::stdin().read_line(&mut read).unwrap();
+                        if read.contains('c') {
+                            in_step = false;
+                            break;
+                        } else if read.contains('d') {
+                            gb.dump("dump");
+                        } else {
+                            break;
+                        }
                     }
                 }
             }

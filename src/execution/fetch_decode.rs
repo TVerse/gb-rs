@@ -243,7 +243,7 @@ mod tests {
     use crate::components::bus::FlatBus;
 
     #[test]
-    fn cb_40() {
+    fn opcode_cb_40() {
         let cpu = Cpu::zeroed();
         let bus = FlatBus {
             mem: vec![0xCB, 0x40],
@@ -252,6 +252,34 @@ mod tests {
         assert_eq!(
             instr,
             BitRegister(0, CommonRegister::Register8(Register8::B))
+        )
+    }
+
+    #[test]
+    fn opcode_55() {
+        let cpu = Cpu::zeroed();
+        let bus = FlatBus { mem: vec![0x55] };
+        let instr = fetch_and_decode(&cpu, &bus).unwrap().instruction;
+        assert_eq!(
+            instr,
+            LoadRegisterRegister(
+                CommonRegister::Register8(Register8::D),
+                CommonRegister::Register8(Register8::L)
+            )
+        )
+    }
+
+    #[test]
+    fn opcode_60() {
+        let cpu = Cpu::zeroed();
+        let bus = FlatBus { mem: vec![0x60] };
+        let instr = fetch_and_decode(&cpu, &bus).unwrap().instruction;
+        assert_eq!(
+            instr,
+            LoadRegisterRegister(
+                CommonRegister::Register8(Register8::H),
+                CommonRegister::Register8(Register8::B)
+            )
         )
     }
 }

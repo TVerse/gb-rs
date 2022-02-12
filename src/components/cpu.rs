@@ -96,8 +96,12 @@ impl Cpu {
 
     pub fn post_boot_rom() -> Self {
         let mut cpu = Self::zeroed();
-        cpu.pc = 0x0100;
-        cpu.sp = 0xFFFE;
+        cpu.set_register16(Register16::AF, 0x01B0);
+        cpu.set_register16(Register16::BC, 0x0013);
+        cpu.set_register16(Register16::DE, 0x00D8);
+        cpu.set_register16(Register16::HL, 0x014D);
+        cpu.set_register16(Register16::SP, 0xFFFE);
+        cpu.set_register16(Register16::PC, 0x0100);
         cpu
     }
 

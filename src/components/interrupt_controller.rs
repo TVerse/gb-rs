@@ -39,12 +39,8 @@ impl ByteAddressable for InterruptController {
 
     fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
         match address {
-            0xFF0F => {
-                self.interrupt_flags = byte;
-            }
-            0xFFFF => {
-                self.interrupt_enable = byte;
-            }
+            0xFF0F => self.interrupt_flags = byte,
+            0xFFFF => self.interrupt_enable = byte,
             _ => {
                 return Err(GameBoyError::NonMappedAddress {
                     address,
