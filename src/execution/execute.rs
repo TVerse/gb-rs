@@ -224,11 +224,11 @@ impl<'a> Executor<'a> {
                 self.cpu.set_register16(r, word);
             }
             Instruction::AddSPImmediate(i) => {
-                let res = self.add_i8_to_sp_and_set_flags(i.0 as i8);
+                let res = self.add_i8_to_sp_and_set_flags(i.0);
                 self.cpu.set_register16(Register16::SP, res);
             }
             Instruction::LoadHLSPImmediate(i) => {
-                let res = self.add_i8_to_sp_and_set_flags(i.0 as i8);
+                let res = self.add_i8_to_sp_and_set_flags(i.0);
                 self.cpu.set_register16(Register16::HL, res);
             }
             Instruction::RotateALeft => {
@@ -297,14 +297,14 @@ impl<'a> Executor<'a> {
             }
             Instruction::JumpRelative(offset) => {
                 let pc = self.cpu.get_register16(Register16::PC);
-                let a = Self::add_u16_to_i8(pc, offset.0 as i8);
+                let a = Self::add_u16_to_i8(pc, offset.0);
                 self.cpu.set_register16(Register16::PC, a)
             }
             Instruction::JumpConditionalRelative(c, offset) => {
                 let flags = self.cpu.get_flags();
                 if Self::should_conditional_jump(flags, c) {
                     let pc = self.cpu.get_register16(Register16::PC);
-                    let a = Self::add_u16_to_i8(pc, offset.0 as i8);
+                    let a = Self::add_u16_to_i8(pc, offset.0);
                     self.cpu.set_register16(Register16::PC, a)
                 } else {
                     conditional_branch_not_taken = true;
@@ -350,19 +350,26 @@ impl<'a> Executor<'a> {
         Ok(cycles)
     }
 
-    fn add_i8_to_sp_and_set_flags(&mut self, i: i8) -> u16 {
+    fn add_i8_to_sp_and_set_flags(&mut self, i: u8) -> u16 {
         let sp = self.cpu.get_register16(Register16::SP);
-        let lower = sp & 0xFF;
-        let first_nibble = sp & 0x0F;
-        let h = Self::add_u16_to_i8(first_nibble, i & 0xF) > 0x0F;
-        let c = Self::add_u16_to_i8(lower, i) > 0xFF;
+        let lower = (sp & 0xFF) as u8;
+        let res_h = (lower & 0x0F) + (i & 0x0F);
+        let h = res_h > 0x0F;
+        let res_lower = (lower as u16) + (i as u16);
+        let c = res_lower > 0xFF;
+
         self.cpu
             .edit_flags(Some(false), Some(false), Some(h), Some(c));
         Self::add_u16_to_i8(sp, i)
     }
 
-    fn add_u16_to_i8(a: u16, b: i8) -> u16 {
-        a.wrapping_add(b as u16)
+    fn add_u16_to_i8(a: u16, b: u8) -> u16 {
+        let b = if b & 0x80 == 0 {
+            b as u16
+        } else {
+            (b as u16) | 0xFF00
+        };
+        a.wrapping_add(b)
     }
 
     fn add_16bit_hl(&mut self, r: Register16) {
@@ -1005,5 +1012,48 @@ mod tests {
         let instruction = Instruction::Pop(Register16::BC);
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::BC), 0x1234, "bc");
+    }
+
+    #[test]
+    fn add_sp_s8_1() {
+        let instruction = Instruction::AddSPImmediate(Immediate8(0x7F));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::SP, 0x1000);
+        let mut bus = FlatBus {mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register16(Register16::SP), 0x107F, "sp");
+    }
+
+    #[test]
+    fn add_sp_s8_2() {
+        let instruction = Instruction::AddSPImmediate(Immediate8(0xFF));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::SP, 0x1000);
+        let mut bus = FlatBus {mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register16(Register16::SP), 0x0FFF, "sp");
+    }
+
+    #[test]
+    fn add_sp_s8_3() {
+        let instruction = Instruction::AddSPImmediate(Immediate8(0x01));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::SP, 0x000F);
+        let mut bus = FlatBus {mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register16(Register16::SP), 0x0010, "sp");
+        assert!(cpu.get_flags().h, "h");
+    }
+
+    #[test]
+    fn add_sp_s8_4() {
+        let instruction = Instruction::AddSPImmediate(Immediate8(0xFF));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register16(Register16::SP, 0xFFFF);
+        let mut bus = FlatBus {mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register16(Register16::SP), 0xFFFE, "sp");
+        assert!(cpu.get_flags().h, "h");
+        assert!(cpu.get_flags().c, "c");
     }
 }
