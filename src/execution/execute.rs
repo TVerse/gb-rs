@@ -206,7 +206,7 @@ impl<'a> Executor<'a> {
                 self.set_common_register(r, byte)?;
                 self.cpu.edit_flags(Some(z), Some(true), Some(h), None);
             }
-            Instruction::DecimalAdjust => todo!(),
+            Instruction::DecimalAdjust => self.daa(),
             Instruction::Complement => {
                 let a = self.cpu.get_register8(Register8::A);
                 self.cpu.set_register8(Register8::A, !a);
@@ -613,6 +613,33 @@ impl<'a> Executor<'a> {
         self.cpu
             .edit_flags(Some(z), Some(false), Some(false), Some(c));
         self.set_common_register(r, res)
+    }
+
+    fn daa(&mut self) {
+        let flags = self.cpu.get_flags();
+        let mut a = self.cpu.get_register8(Register8::A);
+        let mut c = false;
+        if !flags.n {
+            if flags.c || a > 0x99 {
+                a = a.wrapping_add(0x60);
+                c = true;
+            }
+            if flags.h || (a & 0x0F) > 0x09 {
+                a = a.wrapping_add(0x06);
+            }
+        } else {
+            if flags.c {
+                a = a.wrapping_sub(0x60);
+                c = true;
+            }
+            if flags.h {
+                a = a.wrapping_sub(0x06);
+            }
+        }
+
+        let z = a == 0;
+        self.cpu.set_register8(Register8::A, a);
+        self.cpu.edit_flags(Some(z), None, Some(false), Some(c))
     }
 }
 
