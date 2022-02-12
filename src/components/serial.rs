@@ -1,5 +1,5 @@
-use crate::{ByteAddressable, InterruptController};
-
+use crate::components::interrupt_controller::InterruptController;
+use crate::components::ByteAddressable;
 use crate::GameBoyError;
 use crate::RawResult;
 

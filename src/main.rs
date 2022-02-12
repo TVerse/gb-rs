@@ -6,7 +6,7 @@ use std::fs::File;
 use std::path::Path;
 
 fn main() {
-    let default_path: String = "gb-test-roms/cpu_instrs/source/test.gb".to_owned();
+    let default_path: String = "gb-test-roms/cpu_instrs/individual/09-op r,r.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
@@ -39,7 +39,7 @@ fn main() {
     loop {
         match gb.step() {
             Ok(res) => {
-                // let breakpoints: &[u16] = &[0xC78D];
+                // let breakpoints: &[u16] = &[0xC460, 0xC486, 0xC78D];
                 let breakpoints: &[u16] = &[];
                 if breakpoints.contains(&res.execution_context.pc) {
                     in_step = true;
@@ -66,6 +66,8 @@ fn main() {
                             break;
                         } else if read.contains('d') {
                             gb.dump("dump");
+                        } else if read.contains('q') {
+                            return;
                         } else {
                             break;
                         }

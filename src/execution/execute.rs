@@ -560,7 +560,7 @@ impl<'a> Executor<'a> {
         let a = self.get_common_register(r)?;
         let cur_carry = self.cpu.get_flags().c;
         let c = a & 0x01 > 0;
-        let res = a.rotate_left(1);
+        let res = a.rotate_right(1);
         let res = (res & 0x7F) | (if cur_carry { 0x80 } else { 0 });
         let z = res == 0;
         self.cpu

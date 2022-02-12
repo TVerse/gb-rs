@@ -9,7 +9,7 @@ use crate::components::work_ram::WorkRam;
 use crate::components::ByteAddressable;
 
 use crate::components::controller::Controller;
-use crate::{GameBoyError, RawResult};
+use crate::{GameBoyError, RawResult, KIB};
 
 pub trait Bus {
     fn read_byte(&self, address: u16) -> RawResult<u8>;
@@ -29,21 +29,51 @@ pub trait Bus {
         self.write_byte(address, lower)?;
         self.write_byte(address.wrapping_add(1), higher)
     }
+
+    fn memory_dump(&self) -> [u8; 64 * KIB] {
+        let v: Vec<u8> = (0..=0xFFFF)
+            .map(|addr| self.read_byte(addr).unwrap_or(0xFF))
+            .collect();
+        // This vec is always 64 KIB long
+        v.try_into().unwrap()
+    }
 }
 
-pub struct RealBus<'a> {
-    pub cartridge: &'a mut dyn Cartridge,
-    pub ppu: &'a mut Ppu,
-    pub serial: &'a mut Serial,
-    pub work_ram: &'a mut WorkRam,
-    pub interrupt_controller: &'a mut InterruptController,
-    pub high_ram: &'a mut HighRam,
-    pub timer: &'a mut Timer,
-    pub sound: &'a mut Sound,
-    pub controller: &'a mut Controller,
+pub struct RealBus {
+    pub cartridge: Box<dyn Cartridge>,
+    pub ppu: Ppu,
+    pub serial: Serial,
+    pub work_ram: WorkRam,
+    pub interrupt_controller: InterruptController,
+    pub high_ram: HighRam,
+    pub timer: Timer,
+    pub sound: Sound,
+    pub controller: Controller,
 }
 
-impl<'a> Bus for RealBus<'a> {
+impl RealBus {
+    pub fn new(cartridge: Box<dyn Cartridge>) -> Self {
+        Self {
+            cartridge,
+            ppu: Ppu::new(),
+            serial: Serial::new(),
+            work_ram: WorkRam::new(),
+            interrupt_controller: InterruptController::new(),
+            high_ram: HighRam::new(),
+            timer: Timer::new(),
+            sound: Sound::new(),
+            controller: Controller::new(),
+        }
+    }
+
+    pub fn step(&mut self, cycles: usize) -> Option<u8> {
+        let serial_byte = self.serial.step(cycles, &mut self.interrupt_controller);
+
+        serial_byte
+    }
+}
+
+impl Bus for RealBus {
     fn read_byte(&self, address: u16) -> RawResult<u8> {
         self.cartridge
             .read_byte(address)

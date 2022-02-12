@@ -3,22 +3,16 @@ extern crate core;
 mod components;
 mod execution;
 
+use crate::components::bus::Bus;
 use crate::components::bus::RealBus;
 use crate::components::cartridge::Cartridge;
-use crate::components::ppu::Ppu;
-use crate::components::serial::Serial;
 use crate::components::ByteAddressable;
 use components::cpu::Cpu;
 use std::fs;
 use std::path::Path;
+
 use thiserror::Error;
 
-use crate::components::controller::Controller;
-use crate::components::high_ram::HighRam;
-use crate::components::interrupt_controller::InterruptController;
-use crate::components::sound::Sound;
-use crate::components::timer::Timer;
-use crate::components::work_ram::WorkRam;
 use crate::execution::{execute_instruction, fetch_and_decode};
 pub use components::cartridge::parse_into_cartridge;
 pub use components::cpu::{Register16, Register8};
@@ -94,7 +88,11 @@ impl std::fmt::Display for ExecutionContext {
             "Instruction: {} (bytes: {}, cycles: {})",
             self.instruction,
             self.instruction.bytes(),
-            self.instruction.cycles()
+            if let Some(c) = self.instruction.cycles_branch_not_taken() {
+                format!("{}/{}", self.instruction.cycles(), c)
+            } else {
+                self.instruction.cycles().to_string()
+            }
         )
     }
 }
@@ -106,53 +104,25 @@ pub struct StepResult {
 
 pub struct GameBoy {
     pub cpu: Cpu,
-    pub ppu: Ppu,
-    pub cartridge: Box<dyn Cartridge>,
-    pub serial: Serial,
-    pub work_ram: WorkRam,
-    pub interrupt_controller: InterruptController,
-    pub high_ram: HighRam,
-    pub timer: Timer,
-    pub sound: Sound,
-    pub controller: Controller,
+    pub bus: RealBus,
 }
 
 impl GameBoy {
     pub fn new(cartridge: Box<dyn Cartridge>) -> Self {
         Self {
             cpu: Cpu::new(),
-            ppu: Ppu::new(),
-            cartridge,
-            serial: Serial::new(),
-            work_ram: WorkRam::new(),
-            interrupt_controller: InterruptController::new(),
-            high_ram: HighRam::new(),
-            timer: Timer::new(),
-            sound: Sound::new(),
-            controller: Controller::new(),
+            bus: RealBus::new(cartridge),
         }
     }
 
     pub fn step(&mut self) -> Result<StepResult> {
-        let mut bus = RealBus {
-            cartridge: self.cartridge.as_mut(),
-            ppu: &mut self.ppu,
-            serial: &mut self.serial,
-            work_ram: &mut self.work_ram,
-            interrupt_controller: &mut self.interrupt_controller,
-            high_ram: &mut self.high_ram,
-            timer: &mut self.timer,
-            sound: &mut self.sound,
-            controller: &mut self.controller,
-        };
-
         let decode_context =
-            fetch_and_decode(&self.cpu, &bus).map_err(|error| GameBoyExecutionError {
+            fetch_and_decode(&self.cpu, &self.bus).map_err(|error| GameBoyExecutionError {
                 error,
                 execution_context: None,
             })?;
 
-        let cycles = execute_instruction(&mut self.cpu, &mut bus, decode_context.instruction)
+        let cycles = execute_instruction(&mut self.cpu, &mut self.bus, decode_context.instruction)
             .map_err(|error| GameBoyExecutionError {
                 error,
                 execution_context: Some(ExecutionContext {
@@ -163,7 +133,7 @@ impl GameBoy {
                 }),
             })?;
 
-        let serial_byte = self.serial.step(cycles, &mut self.interrupt_controller);
+        let serial_byte = self.bus.step(cycles);
 
         Ok(StepResult {
             execution_context: ExecutionContext {
@@ -176,6 +146,10 @@ impl GameBoy {
         })
     }
 
+    pub fn cpu(&self) -> &Cpu {
+        &self.cpu
+    }
+
     pub fn dump(&self, base: &str) {
         let p = Path::new(base);
         if !p.exists() {
@@ -184,14 +158,11 @@ impl GameBoy {
 
         log::info!("Dumping...");
         fs::write(format!("{}/cpu.txt", base), format!("{}", self.cpu)).unwrap();
-        fs::write(format!("{}/work_ram.bin", base), self.work_ram.raw()).unwrap();
-        fs::write(format!("{}/high_ram.bin", base), self.high_ram.raw()).unwrap();
-        fs::write(format!("{}/vram.bin", base), self.ppu.vram_raw()).unwrap();
-        fs::write(format!("{}/oam.bin", base), self.ppu.oam_raw()).unwrap();
+        fs::write(
+            format!("{}/address_space.bin", base),
+            self.bus.memory_dump(),
+        )
+        .unwrap();
         log::info!("Dump done!")
-    }
-
-    pub fn cpu(&self) -> &Cpu {
-        &self.cpu
     }
 }
