@@ -262,7 +262,8 @@ impl<'a> Executor<'a> {
                 let byte = self.get_common_register(r)?;
                 let byte = (byte >> 4) | (byte << 4);
                 self.set_common_register(r, byte)?;
-                self.cpu.edit_flags(Some(byte == 0), Some(false), Some(false), Some(false))
+                self.cpu
+                    .edit_flags(Some(byte == 0), Some(false), Some(false), Some(false))
             }
             Instruction::BitRegister(n, r) => self.bit(r, n)?,
             Instruction::SetRegister(n, r) => self.set(r, n)?,
@@ -500,10 +501,14 @@ impl<'a> Executor<'a> {
         };
         let result = (a as i16).wrapping_sub(b as i16).wrapping_sub(carry);
         let c = result < 0x00;
+        let result = result as u8;
         let z = result == 0;
-        let h = ((a & 0x0F) as i8).wrapping_sub((b & 0x0F) as i8) < 0x00;
+        let h = ((a & 0x0F) as i8)
+            .wrapping_sub((b & 0x0F) as i8)
+            .wrapping_sub(carry as i8)
+            < 0x00;
         self.cpu.edit_flags(Some(z), Some(true), Some(h), Some(c));
-        result as u8
+        result
     }
 
     fn and(&mut self, b: u8) {
@@ -1021,7 +1026,7 @@ mod tests {
         let instruction = Instruction::AddSPImmediate(Immediate8(0x7F));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::SP, 0x1000);
-        let mut bus = FlatBus {mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::SP), 0x107F, "sp");
     }
@@ -1031,7 +1036,7 @@ mod tests {
         let instruction = Instruction::AddSPImmediate(Immediate8(0xFF));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::SP, 0x1000);
-        let mut bus = FlatBus {mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::SP), 0x0FFF, "sp");
     }
@@ -1041,7 +1046,7 @@ mod tests {
         let instruction = Instruction::AddSPImmediate(Immediate8(0x01));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::SP, 0x000F);
-        let mut bus = FlatBus {mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::SP), 0x0010, "sp");
         assert!(cpu.get_flags().h, "h");
@@ -1052,7 +1057,7 @@ mod tests {
         let instruction = Instruction::AddSPImmediate(Immediate8(0xFF));
         let mut cpu = Cpu::zeroed();
         cpu.set_register16(Register16::SP, 0xFFFF);
-        let mut bus = FlatBus {mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register16(Register16::SP), 0xFFFE, "sp");
         assert!(cpu.get_flags().h, "h");
@@ -1060,98 +1065,143 @@ mod tests {
     }
 
     #[test]
-    fn add_a_imm_1(){
+    fn add_a_imm_1() {
         let instruction = Instruction::AddImmediate8(Immediate8(0x00));
         let mut cpu = Cpu::zeroed();
-        let mut bus = FlatBus{mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 0, "a");
-        assert_eq!(cpu.get_flags(), &Flags {
-            z: true,
-            n: false,
-            h: false,
-            c: false,
-        }, "flags");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: true,
+                n: false,
+                h: false,
+                c: false,
+            },
+            "flags"
+        );
     }
 
     #[test]
-    fn add_a_imm_2(){
+    fn add_a_imm_2() {
         let instruction = Instruction::AddImmediate8(Immediate8(0xFF));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::A, 0x01);
-        let mut bus = FlatBus{mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 0, "a");
-        assert_eq!(cpu.get_flags(), &Flags {
-            z: true,
-            n: false,
-            h: true,
-            c: true,
-        }, "flags");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: true,
+                n: false,
+                h: true,
+                c: true,
+            },
+            "flags"
+        );
     }
 
     #[test]
-    fn sub_a_imm_1(){
+    fn sub_a_imm_1() {
         let instruction = Instruction::SubImmediate8(Immediate8(0x00));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::A, 0x01);
-        let mut bus = FlatBus{mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 1, "a");
-        assert_eq!(cpu.get_flags(), &Flags {
-            z: false,
-            n: true,
-            h: false,
-            c: false,
-        }, "flags");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: true,
+                h: false,
+                c: false,
+            },
+            "flags"
+        );
     }
 
     #[test]
-    fn sub_a_imm_2(){
+    fn sub_a_imm_2() {
         let instruction = Instruction::SubImmediate8(Immediate8(0x02));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::A, 0x01);
-        let mut bus = FlatBus{mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 0xFF, "a");
-        assert_eq!(cpu.get_flags(), &Flags {
-            z: false,
-            n: true,
-            h: true,
-            c: true,
-        }, "flags");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: true,
+                h: true,
+                c: true,
+            },
+            "flags"
+        );
     }
 
     #[test]
-    fn sub_a_imm_3(){
+    fn sub_a_imm_3() {
         let instruction = Instruction::SubImmediate8(Immediate8(0x02));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::A, 0x11);
-        let mut bus = FlatBus{mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 0x0F, "a");
-        assert_eq!(cpu.get_flags(), &Flags {
-            z: false,
-            n: true,
-            h: true,
-            c: false,
-        }, "flags");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: true,
+                h: true,
+                c: false,
+            },
+            "flags"
+        );
     }
 
     #[test]
-    fn adc_a_imm_1(){
+    fn adc_a_imm_1() {
         let instruction = Instruction::AddCarryImmediate8(Immediate8(0x00));
         let mut cpu = Cpu::zeroed();
         cpu.set_register8(Register8::A, 0xFF);
         cpu.edit_flags(None, None, None, Some(true));
-        let mut bus = FlatBus{mem: vec![]};
+        let mut bus = FlatBus { mem: vec![] };
         execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
         assert_eq!(cpu.get_register8(Register8::A), 0x00, "a");
-        assert_eq!(cpu.get_flags(), &Flags {
-            z: true,
-            n: false,
-            h: true,
-            c: true,
-        }, "flags");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: true,
+                n: false,
+                h: true,
+                c: true,
+            },
+            "flags"
+        );
+    }
+
+    #[test]
+    fn sbc_a_imm_1() {
+        let instruction = Instruction::SubCarryImmediate8(Immediate8(0x00));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0x00);
+        cpu.edit_flags(None, None, None, Some(true));
+        let mut bus = FlatBus { mem: vec![] };
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 0xFF, "a");
+        assert_eq!(
+            cpu.get_flags(),
+            &Flags {
+                z: false,
+                n: true,
+                h: true,
+                c: true,
+            },
+            "flags"
+        );
     }
 }

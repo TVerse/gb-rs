@@ -67,9 +67,7 @@ impl RealBus {
     }
 
     pub fn step(&mut self, cycles: usize) -> Option<u8> {
-        let serial_byte = self.serial.step(cycles, &mut self.interrupt_controller);
-
-        serial_byte
+        self.serial.step(cycles, &mut self.interrupt_controller)
     }
 }
 
