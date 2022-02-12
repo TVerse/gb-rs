@@ -484,11 +484,12 @@ impl<'a> Executor<'a> {
         };
         let result = (a as u16) + (b as u16) + carry;
         let c = result > 0xFF;
-        let half_result = (a & 0x0F).wrapping_add(b & 0x0F);
+        let half_result = (a & 0x0F).wrapping_add(b & 0x0F).wrapping_add(carry as u8);
         let h = half_result > 0x0F;
+        let result = result as u8;
         let z = result == 0;
-        self.cpu.edit_flags(Some(z), Some(true), Some(h), Some(c));
-        result as u8
+        self.cpu.edit_flags(Some(z), Some(false), Some(h), Some(c));
+        result
     }
 
     fn sub_8_set_flags(&mut self, a: u8, b: u8, with_carry: bool) -> u8 {
@@ -1056,5 +1057,101 @@ mod tests {
         assert_eq!(cpu.get_register16(Register16::SP), 0xFFFE, "sp");
         assert!(cpu.get_flags().h, "h");
         assert!(cpu.get_flags().c, "c");
+    }
+
+    #[test]
+    fn add_a_imm_1(){
+        let instruction = Instruction::AddImmediate8(Immediate8(0x00));
+        let mut cpu = Cpu::zeroed();
+        let mut bus = FlatBus{mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 0, "a");
+        assert_eq!(cpu.get_flags(), &Flags {
+            z: true,
+            n: false,
+            h: false,
+            c: false,
+        }, "flags");
+    }
+
+    #[test]
+    fn add_a_imm_2(){
+        let instruction = Instruction::AddImmediate8(Immediate8(0xFF));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0x01);
+        let mut bus = FlatBus{mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 0, "a");
+        assert_eq!(cpu.get_flags(), &Flags {
+            z: true,
+            n: false,
+            h: true,
+            c: true,
+        }, "flags");
+    }
+
+    #[test]
+    fn sub_a_imm_1(){
+        let instruction = Instruction::SubImmediate8(Immediate8(0x00));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0x01);
+        let mut bus = FlatBus{mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 1, "a");
+        assert_eq!(cpu.get_flags(), &Flags {
+            z: false,
+            n: true,
+            h: false,
+            c: false,
+        }, "flags");
+    }
+
+    #[test]
+    fn sub_a_imm_2(){
+        let instruction = Instruction::SubImmediate8(Immediate8(0x02));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0x01);
+        let mut bus = FlatBus{mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 0xFF, "a");
+        assert_eq!(cpu.get_flags(), &Flags {
+            z: false,
+            n: true,
+            h: true,
+            c: true,
+        }, "flags");
+    }
+
+    #[test]
+    fn sub_a_imm_3(){
+        let instruction = Instruction::SubImmediate8(Immediate8(0x02));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0x11);
+        let mut bus = FlatBus{mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 0x0F, "a");
+        assert_eq!(cpu.get_flags(), &Flags {
+            z: false,
+            n: true,
+            h: true,
+            c: false,
+        }, "flags");
+    }
+
+    #[test]
+    fn adc_a_imm_1(){
+        let instruction = Instruction::AddCarryImmediate8(Immediate8(0x00));
+        let mut cpu = Cpu::zeroed();
+        cpu.set_register8(Register8::A, 0xFF);
+        cpu.edit_flags(None, None, None, Some(true));
+        let mut bus = FlatBus{mem: vec![]};
+        execute_instruction(&mut cpu, &mut bus, instruction).unwrap();
+        assert_eq!(cpu.get_register8(Register8::A), 0x00, "a");
+        assert_eq!(cpu.get_flags(), &Flags {
+            z: true,
+            n: false,
+            h: true,
+            c: true,
+        }, "flags");
     }
 }

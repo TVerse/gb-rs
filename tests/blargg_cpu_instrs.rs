@@ -27,6 +27,8 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
+const MAX_STEPS: usize = 10_000_000;
+
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
     let file = fs::read_dir(base_path)
@@ -38,8 +40,6 @@ fn load_rom(prefix: &str) -> Vec<u8> {
 
     fs::read(file).unwrap()
 }
-
-const MAX_STEPS: usize = 10_000_000;
 
 fn execute_test(rom: Vec<u8>) {
     let cartridge = parse_into_cartridge(rom);
