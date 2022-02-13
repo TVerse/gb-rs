@@ -1,6 +1,7 @@
 mod mbc1;
 mod rom_only;
 
+use std::fmt::Debug;
 use crate::components::cartridge::mbc1::Mbc1Cartridge;
 use crate::components::cartridge::rom_only::RomOnlyCartridge;
 use crate::RawResult;
@@ -51,7 +52,7 @@ struct RawCartridgeHeader {
     global_checksum: [u8; 2],
 }
 
-pub trait Cartridge {
+pub trait Cartridge: Debug {
     fn read_byte(&self, address: u16) -> RawResult<u8>;
     fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()>;
 }

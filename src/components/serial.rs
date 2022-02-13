@@ -3,6 +3,7 @@ use crate::components::ByteAddressable;
 use crate::GameBoyError;
 use crate::RawResult;
 
+#[derive(Debug, Clone)]
 pub struct Serial {
     sb: u8,
     sc: u8,
@@ -15,8 +16,8 @@ impl Serial {
 
     pub fn step(
         &mut self,
-        _cycles: usize,
         interrupt_controller: &mut InterruptController,
+        _cycles: usize,
     ) -> Option<u8> {
         if self.sc == 0x80 {
             todo!("External clock")

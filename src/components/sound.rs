@@ -2,6 +2,7 @@ use crate::ByteAddressable;
 use crate::GameBoyError;
 use crate::RawResult;
 
+#[derive(Debug, Clone)]
 pub struct Sound {}
 
 impl Sound {

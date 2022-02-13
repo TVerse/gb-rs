@@ -1,6 +1,6 @@
 use crate::{ByteAddressable, GameBoyError, RawResult, KIB};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WorkRam {
     ram: [u8; 8 * KIB],
 }

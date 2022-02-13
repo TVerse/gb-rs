@@ -1,4 +1,4 @@
-use gb_rs::{parse_into_cartridge, GameBoy};
+use gb_rs::{parse_into_cartridge, GameBoy, Instruction, StepType, Immediate8};
 use simplelog::*;
 use std::env;
 use std::fs;
@@ -6,10 +6,10 @@ use std::fs::File;
 use std::path::Path;
 
 fn main() {
-    let default_path: String = "gb-test-roms/cpu_instrs/individual/09-op r,r.gb".to_owned();
+    let default_path: String = "gb-test-roms/cpu_instrs/individual/02-interrupts.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
-            LevelFilter::Info,
+            LevelFilter::Trace,
             Config::default(),
             TerminalMode::Mixed,
             ColorChoice::Auto,
@@ -36,13 +36,34 @@ fn main() {
 
     let mut in_step = false;
 
+    let mut steps = 0;
+
     loop {
         match gb.step() {
             Ok(res) => {
-                // let breakpoints: &[u16] = &[0xC460, 0xC486, 0xC78D];
-                let breakpoints: &[u16] = &[];
-                if breakpoints.contains(&res.execution_context.pc) {
-                    in_step = true;
+                steps += 1;
+                match res.step_type {
+                    StepType::InstructionExecuted(execution_context) => {
+                        // let breakpoints: &[u16] = &[0xC460, 0xC486, 0xC78D];
+                        let breakpoints: &[u16] = &[0xc316, 0xc321, 0xc32f, 0xc33d, 0xc350];
+                        if breakpoints.contains(&execution_context.pc) {
+                            in_step = true;
+                        }
+                        if steps > 10_000_000 {
+                            in_step = true;
+                        }
+                        match execution_context.instruction {
+                            // Instruction::LoadIOIndirectImmediate8A(Immediate8(0x07)) => in_step = true,
+                            // Instruction::LoadIOAIndirectImmediate8(Immediate8(0x07)) => in_step = true,
+                            // Instruction::DI => in_step = true,
+                            _ => {}
+                        }
+                        if in_step {
+                            log::info!("Context:\n{}", execution_context);
+                        }
+                    }
+                    StepType::InterruptStarted => in_step = true,
+                    StepType::Halted => {}
                 }
                 if let Some(serial) = res.serial_byte {
                     serial_out.push(serial);
@@ -56,10 +77,9 @@ fn main() {
                     break;
                 }
                 if in_step {
-                    log::info!("Context:\n{}", res.execution_context);
                     log::info!("Cpu:\n{}", gb.cpu);
-                    let mut read = String::with_capacity(1);
                     loop {
+                        let mut read = String::with_capacity(1);
                         std::io::stdin().read_line(&mut read).unwrap();
                         if read.contains('c') {
                             in_step = false;

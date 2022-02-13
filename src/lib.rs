@@ -13,10 +13,13 @@ use std::path::Path;
 
 use thiserror::Error;
 
-use crate::execution::{execute_instruction, fetch_and_decode};
+use crate::execution::{execute_instruction, fetch_and_decode, handle_interrupt};
 pub use components::cartridge::parse_into_cartridge;
 pub use components::cpu::{Register16, Register8};
-pub use execution::instructions::{CommonRegister, Instruction, JumpCondition, ResetVector};
+pub use execution::instructions::{CommonRegister, Instruction, JumpCondition, ResetVector, Immediate8, Immediate16};
+use crate::components::cpu::State;
+use crate::components::interrupt_controller::Interrupt;
+use crate::Instruction::Push;
 
 pub type RawResult<T> = std::result::Result<T, GameBoyError>;
 
@@ -41,6 +44,15 @@ impl std::fmt::Display for GameBoyExecutionError {
     }
 }
 
+impl From<GameBoyError> for GameBoyExecutionError {
+    fn from(error: GameBoyError) -> Self {
+        Self {
+            error,
+            execution_context: None,
+        }
+    }
+}
+
 #[derive(Error, Debug, Clone)]
 pub enum GameBoyError {
     #[error("Tried to use nonmapped address {address:#06x}: {description}")]
@@ -52,7 +64,7 @@ pub enum GameBoyError {
     InvalidOpcode { opcode: u8, pc: u16 },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub instruction: Instruction,
     pub pc: u16,
@@ -97,11 +109,20 @@ impl std::fmt::Display for ExecutionContext {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct StepResult {
-    pub execution_context: ExecutionContext,
+    pub step_type: StepType,
     pub serial_byte: Option<u8>,
 }
 
+#[derive(Debug, Clone)]
+pub enum StepType {
+    InstructionExecuted(ExecutionContext),
+    InterruptStarted,
+    Halted,
+}
+
+#[derive(Debug)]
 pub struct GameBoy {
     pub cpu: Cpu,
     pub bus: RealBus,
@@ -116,38 +137,81 @@ impl GameBoy {
     }
 
     pub fn step(&mut self) -> Result<StepResult> {
-        let decode_context =
-            fetch_and_decode(&self.cpu, &self.bus).map_err(|error| GameBoyExecutionError {
-                error,
-                execution_context: None,
-            })?;
+        let interrupt = self.potential_interrupt()?;
 
-        let cycles = execute_instruction(&mut self.cpu, &mut self.bus, decode_context.instruction)
-            .map_err(|error| GameBoyExecutionError {
-                error,
-                execution_context: Some(ExecutionContext {
-                    instruction: decode_context.instruction,
-                    pc: decode_context.pc,
-                    three_bytes_before_pc: decode_context.three_bytes_before_pc,
-                    three_bytes_at_pc: decode_context.three_bytes_at_pc,
-                }),
-            })?;
 
-        let serial_byte = self.bus.step(cycles);
+        if let Some(interrupt_vector) = interrupt {
+            if self.cpu.get_state() == State::Halted {
+                self.cpu.set_state(State::Running);
+            }
+            if self.cpu.interrupts_enabled() {
+                let cycles = handle_interrupt(&mut self.cpu, &mut self.bus, interrupt_vector)?;
+                let serial_byte = self.bus.step(cycles);
+                return Ok(StepResult {
+                    step_type: StepType::InterruptStarted,
+                    serial_byte,
+                });
+            }
+        }
 
-        Ok(StepResult {
-            execution_context: ExecutionContext {
-                instruction: decode_context.instruction,
-                pc: decode_context.pc,
-                three_bytes_before_pc: decode_context.three_bytes_before_pc,
-                three_bytes_at_pc: decode_context.three_bytes_at_pc,
-            },
-            serial_byte,
-        })
+        match self.cpu.get_state() {
+            State::Running => {
+                let decode_context =
+                    fetch_and_decode(&self.cpu, &self.bus).map_err(|error| GameBoyExecutionError {
+                        error,
+                        execution_context: None,
+                    })?;
+
+                let cycles = execute_instruction(&mut self.cpu, &mut self.bus, decode_context.instruction)
+                    .map_err(|error| GameBoyExecutionError {
+                        error,
+                        execution_context: Some(ExecutionContext {
+                            instruction: decode_context.instruction,
+                            pc: decode_context.pc,
+                            three_bytes_before_pc: decode_context.three_bytes_before_pc,
+                            three_bytes_at_pc: decode_context.three_bytes_at_pc,
+                        }),
+                    })?;
+
+                let serial_byte = self.bus.step(cycles);
+
+                Ok(StepResult {
+                    step_type: StepType::InstructionExecuted(ExecutionContext {
+                        instruction: decode_context.instruction,
+                        pc: decode_context.pc,
+                        three_bytes_before_pc: decode_context.three_bytes_before_pc,
+                        three_bytes_at_pc: decode_context.three_bytes_at_pc,
+                    }),
+                    serial_byte,
+                })
+            }
+            State::Halted => {
+                let serial_byte = self.bus.step(1);
+                Ok(StepResult {
+                    step_type: StepType::Halted,
+                    serial_byte
+                })
+            }
+            State::Stopped => todo!("State::Stopped")
+        }
     }
 
-    pub fn cpu(&self) -> &Cpu {
-        &self.cpu
+    pub fn potential_interrupt(&self) -> RawResult<Option<Interrupt>> {
+        let valid_interrupts = self.bus.read_byte(0xFF0F)? & self.bus.read_byte(0xFFFF)?;
+        let res = if valid_interrupts & 0x01 != 0 {
+            Some(Interrupt::VBlank)
+        } else if valid_interrupts & 0x02 != 0 {
+            Some(Interrupt::LcdStat)
+        } else if valid_interrupts & 0x04 != 0 {
+            Some(Interrupt::Timer)
+        } else if valid_interrupts & 0x08 != 0 {
+            Some(Interrupt::Serial)
+        } else if valid_interrupts & 0x10 != 0 {
+            Some(Interrupt::Joypad)
+        } else {
+            None
+        };
+        Ok(res)
     }
 
     pub fn dump(&self, base: &str) {

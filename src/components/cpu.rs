@@ -40,12 +40,12 @@ pub struct Cpu {
 
 impl std::fmt::Display for Cpu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "a: {:#04x}\tf: {:#04x}", self.a, self.flags.as_byte())?;
-        writeln!(f, "b: {:#04x}\tc: {:#04x}", self.b, self.c)?;
-        writeln!(f, "d: {:#04x}\te: {:#04x}", self.d, self.e)?;
-        writeln!(f, "h: {:#04x}\tl: {:#04x}", self.h, self.l)?;
-        writeln!(f, "sp: {:#06x}", self.sp)?;
-        writeln!(f, "pc: {:#06x}", self.pc)?;
+        writeln!(f, "a: {:#04x}\tf: {:#04X}", self.a, self.flags.as_byte())?;
+        writeln!(f, "b: {:#04x}\tc: {:#04X}", self.b, self.c)?;
+        writeln!(f, "d: {:#04x}\te: {:#04X}", self.d, self.e)?;
+        writeln!(f, "h: {:#04x}\tl: {:#04X}", self.h, self.l)?;
+        writeln!(f, "sp: {:#06X}", self.sp)?;
+        writeln!(f, "pc: {:#06X}", self.pc)?;
 
         writeln!(
             f,
@@ -199,6 +199,7 @@ impl Cpu {
     }
 
     pub fn disable_interrupts(&mut self) {
+        self.in_enable_interrupt_delay = false;
         self.interrupt_master_enable = false
     }
 

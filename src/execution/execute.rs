@@ -1,7 +1,8 @@
 use crate::components::bus::Bus;
 use crate::components::cpu::{Cpu, Flags, Register16, Register8, State};
 use crate::execution::instructions::{CommonRegister, Instruction, JumpCondition};
-use crate::RawResult;
+use crate::{RawResult};
+use crate::components::interrupt_controller::Interrupt;
 
 // 16-bit H/C is weird https://stackoverflow.com/a/57981912
 
@@ -14,12 +15,32 @@ pub fn execute_instruction(
     executor.execute(instruction)
 }
 
+pub fn handle_interrupt(
+    cpu: &mut Cpu,
+    bus: &mut dyn Bus,
+    interrupt_vector: Interrupt,
+) -> RawResult<usize> {
+    let mut executor = Executor { cpu, bus };
+    executor.handle_interrupt(interrupt_vector)
+}
+
 struct Executor<'a> {
     cpu: &'a mut Cpu,
     bus: &'a mut dyn Bus,
 }
 
 impl<'a> Executor<'a> {
+    fn handle_interrupt(&mut self, interrupt_vector: Interrupt) -> RawResult<usize> {
+        log::info!("Handling interrupt {}", interrupt_vector);
+        self.cpu.disable_interrupts();
+        self.write_to_memory(
+            0xFF0F,
+            self.read_from_memory(0xFF0F)? & !interrupt_vector.bit(),
+        )?;
+        self.call(interrupt_vector.address())?;
+        Ok(5)
+    }
+
     fn execute(&mut self, instruction: Instruction) -> RawResult<usize> {
         let bytes = instruction.bytes();
 
@@ -332,7 +353,7 @@ impl<'a> Executor<'a> {
             }
             Instruction::ReturnInterrupt => {
                 self.ret()?;
-                self.cpu.start_enable_interrupts(); // TODO or enable immediately?
+                self.cpu.enable_interrupts();
             }
             Instruction::Reset(rv) => self.call(rv.address())?,
         };

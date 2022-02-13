@@ -1,6 +1,6 @@
 use crate::{Cartridge, GameBoyError, RawResult, KIB};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Mbc1Cartridge {
     rom: Vec<[u8; 16 * KIB]>,
     rom_bank: u8,

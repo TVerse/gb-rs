@@ -1,5 +1,6 @@
 use crate::{ByteAddressable, GameBoyError};
 
+#[derive(Debug, Clone)]
 pub struct Controller {}
 
 impl Controller {

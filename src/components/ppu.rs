@@ -2,6 +2,7 @@ use crate::components::ByteAddressable;
 use crate::KIB;
 use crate::{GameBoyError, RawResult};
 
+#[derive(Debug, Clone)]
 pub struct Ppu {
     vram: [u8; 8 * KIB],
     oam: [u8; 160],
@@ -110,6 +111,7 @@ impl ByteAddressable for Ppu {
     }
 }
 
+#[derive(Debug, Clone)]
 struct Lcdc {
     data: u8,
 }
@@ -152,6 +154,7 @@ impl Lcdc {
     }
 }
 
+#[derive(Debug, Clone)]
 struct Stat {
     data: u8,
 }
@@ -206,6 +209,7 @@ impl Stat {
     }
 }
 
+#[derive(Debug, Clone)]
 enum Mode {
     HBlank,
     VBlank,
@@ -299,6 +303,7 @@ impl Palette {
     }
 }
 
+#[derive(Debug, Clone)]
 struct PixelBuffer {
     buf: [[Color; 160]; 144],
 }

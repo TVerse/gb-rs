@@ -1,5 +1,6 @@
 use crate::{Cartridge, GameBoyError, RawResult, KIB};
 
+#[derive(Debug, Clone)]
 pub struct RomOnlyCartridge {
     rom: [u8; 32 * KIB],
 }

@@ -1,6 +1,7 @@
 use crate::RawResult;
 use crate::{ByteAddressable, GameBoyError};
 
+#[derive(Debug, Clone)]
 pub struct HighRam {
     ram: [u8; 127],
 }

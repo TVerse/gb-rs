@@ -39,6 +39,7 @@ pub trait Bus {
     }
 }
 
+#[derive(Debug)]
 pub struct RealBus {
     pub cartridge: Box<dyn Cartridge>,
     pub ppu: Ppu,
@@ -67,7 +68,8 @@ impl RealBus {
     }
 
     pub fn step(&mut self, cycles: usize) -> Option<u8> {
-        self.serial.step(cycles, &mut self.interrupt_controller)
+        self.timer.step(&mut self.interrupt_controller, cycles);
+        self.serial.step(&mut self.interrupt_controller, cycles)
     }
 }
 

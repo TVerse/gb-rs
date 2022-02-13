@@ -6,8 +6,15 @@ use std::path::Path;
 macro_rules! blargg_test {
     ($n:expr) => {
         paste! {
-           #[test]
-           fn [<blarg_cpu_instr_ $n>]() {
+            #[test]
+            fn [<blarg_cpu_instr_ $n>]() {
+                let _ = env_logger::builder()
+                    // Include all events in tests
+                    .filter_level(log::LevelFilter::max())
+                    // Ensure events are captured by `cargo test`
+                    .is_test(true)
+                    // Ignore errors initializing the logger if tests race to configure it
+                    .try_init();
                 let rom = load_rom($n);
                 execute_test(rom);
             }
