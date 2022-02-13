@@ -19,7 +19,6 @@ pub use components::cpu::{Register16, Register8};
 pub use execution::instructions::{CommonRegister, Instruction, JumpCondition, ResetVector, Immediate8, Immediate16};
 use crate::components::cpu::State;
 use crate::components::interrupt_controller::Interrupt;
-use crate::Instruction::Push;
 
 pub type RawResult<T> = std::result::Result<T, GameBoyError>;
 

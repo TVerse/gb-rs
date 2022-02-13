@@ -1,4 +1,4 @@
-use gb_rs::{parse_into_cartridge, GameBoy, Instruction, StepType, Immediate8};
+use gb_rs::{parse_into_cartridge, GameBoy, StepType};
 use simplelog::*;
 use std::env;
 use std::fs;
