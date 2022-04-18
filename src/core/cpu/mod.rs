@@ -1,57 +1,79 @@
-mod instructions;
+pub mod instructions;
 pub mod registers;
 
-use crate::core::cpu::instructions::{ArithmeticOperation, CommonRegister, Immediate16, Immediate8, Instruction, JumpCondition, RotationShiftOperation};
+use crate::core::cpu::instructions::{
+    ArithmeticOperation, CommonRegister, Immediate16, Immediate8, Instruction, JumpCondition,
+    ResetVector, RotationShiftOperation,
+};
 use crate::core::cpu::registers::{Flags, Register16, Register8};
-use crate::core::{Clock, ExecuteContext, MemoryView};
+use crate::core::{ExecuteContext, ExecutionEvent, HexAddress, HexByte};
 use registers::Registers;
+
+/*
+TODO
+Currently 16-bit reads tick after each 8bit write, but the value in the register isn't updated until after both.
+Does that matter? Is that observable?
+ */
 
 #[derive(Default, Debug)]
 pub struct Cpu {
     registers: Registers,
     interrupt_master_enable: bool,
+    schedule_ime: bool,
 }
 
 impl Cpu {
-    pub fn get_first_opcode<M: MemoryView>(&mut self, mem: &M) -> u8 {
-        let opcode = mem.read(self.registers.read_register16(Register16::PC));
+    pub fn after_boot_rom() -> Self {
+        Self {
+            registers: Registers::after_boot_rom(),
+            interrupt_master_enable: false,
+            schedule_ime: false,
+        }
+    }
+
+    pub fn get_first_opcode<C: ExecuteContext>(&mut self, ctx: &mut C) -> u8 {
+        let opcode = ctx.read(self.registers.read_register16(Register16::PC));
         self.registers.increment_pc();
         // TODO should the clock tick here? If so, forward to Execution?
         opcode
     }
 
-    pub fn decode_execute_fetch<M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext>(
+    pub fn decode_execute_fetch<C: ExecuteContext >(
         &mut self,
         opcode: u8,
-        mem: &mut M,
-        clock: &mut CLOCK,
-        context: &mut CONTEXT,
-    ) -> (Instruction, u8) {
-        let mut execution = Execution {
-            cpu: self,
-            mem,
-            clock,
-            context,
-        };
+        context: &mut C,
+    ) -> u8 {
+        let mut execution = Execution { cpu: self, context };
         execution.decode_execute_fetch(opcode)
     }
 }
 
-struct Execution<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> {
-    cpu: &'a mut Cpu,
-    mem: &'a mut M,
-    clock: &'a mut CLOCK,
-    context: &'a mut CONTEXT,
+impl std::fmt::Display for Cpu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Registers:")?;
+        writeln!(f, "{}", self.registers)?;
+        if self.interrupt_master_enable {
+            writeln!(f, "Interrupts enabled")?;
+        } else {
+            writeln!(f, "Interrupts disabled")?;
+        }
+        writeln!(f, "Interrupt enable pending: {:?}", self.schedule_ime)
+    }
 }
 
-impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, CLOCK, CONTEXT> {
+struct Execution<'a, C: ExecuteContext > {
+    cpu: &'a mut Cpu,
+    context: &'a mut C,
+}
+
+impl<'a, C: ExecuteContext > Execution<'a, C> {
     /*
        Notes:
        * Post-increment PC, always. Current PC is suitable for use/peeking.
        * Clock ticks are coupled to memory reads, and therefore also handled by fetch_next_opcode.
        * Any reads at PC also increment and tick.
     */
-    pub fn decode_execute_fetch(&mut self, opcode: u8) -> (Instruction, u8) {
+    pub fn decode_execute_fetch(&mut self, opcode: u8) -> u8 {
         let x = (opcode & 0b11000000) >> 6;
         let y = (opcode & 0b00111000) >> 3;
         let z = (opcode & 0b00000111) >> 0;
@@ -76,8 +98,13 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
             3 => self.x_is_3_tree(y, z, p, q),
             _ => panic!("Invalid opcode"),
         };
-
-        (instruction, self.fetch_opcode())
+        self.context.push_event(ExecutionEvent::InstructionExecuted {
+            opcode: HexByte(opcode),
+            instruction,
+            new_pc: HexAddress(self.cpu.registers.read_register16(Register16::PC)),
+            registers: self.cpu.registers.clone()
+        });
+        self.fetch_opcode()
     }
 
     fn x_is_0_tree(&mut self, y: u8, z: u8, p: u8, q: u8) -> Instruction {
@@ -153,18 +180,93 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     }
 
     fn x_is_3_tree(&mut self, y: u8, z: u8, p: u8, q: u8) -> Instruction {
-        todo!()
+        match z {
+            0 => match y {
+                0..=3 => self.ret_cc(JumpCondition::from_u8(y)),
+                4 => self.ld_io_imm_a(),
+                5 => self.add_sp_d(),
+                6 => self.ld_io_a_imm(),
+                7 => self.ld_hl_sp_d(),
+                _ => unreachable!(),
+            },
+            1 => match q {
+                0 => self.pop(Register16::from_byte_af(p)),
+                1 => match p {
+                    0 => self.ret(),
+                    1 => self.reti(),
+                    2 => self.jp_hl(),
+                    3 => self.ld_sp_hl(),
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+            2 => match y {
+                0..=3 => {
+                    let cc = JumpCondition::from_u8(y);
+                    self.jp_cc(cc)
+                }
+                4 => self.ld_io_c_a(),
+                5 => self.ld_inn_a(),
+                6 => self.ld_io_a_c(),
+                7 => self.ld_a_inn(),
+                _ => unreachable!(),
+            },
+            3 => match y {
+                0 => self.jp(),
+                1 => self.cb_prefix(),
+                2 | 3 | 4 | 5 => panic!("Invalid opcode"),
+                6 => self.di(),
+                7 => self.ei(),
+                _ => unreachable!(),
+            },
+            4 => match y {
+                0..=3 => self.call_cc(JumpCondition::from_u8(y)),
+                4..=7 => panic!("Invalid opcode"),
+                _ => unreachable!(),
+            },
+            5 => match q {
+                0 => self.push(Register16::from_byte_af(p)),
+                1 => match p {
+                    0 => self.call(),
+                    1..=3 => panic!("Invalid opcode"),
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+            6 => {
+                let op = ArithmeticOperation::from_u8(y);
+                self.alu_imm(op)
+            }
+            7 => self.rst(ResetVector::from_u8(y)),
+            _ => unreachable!(),
+        }
+    }
+
+    fn cb_prefix(&mut self) -> Instruction {
+        let opcode = self.read_byte_at_pc();
+        let x = (opcode & 0b11000000) >> 6;
+        let y = (opcode & 0b00111000) >> 3;
+        let z = (opcode & 0b00000111) >> 0;
+        match x {
+            0 => self.rotate_shift(
+                RotationShiftOperation::from_u8(y),
+                CommonRegister::from_u8(z),
+            ),
+            1 | 2 | 3 => todo!(),
+            _ => unreachable!(),
+        }
     }
 
     fn read_byte_at(&mut self, addr: u16) -> u8 {
-        let b = self.mem.read(addr);
-        self.cpu.registers.increment_pc();
-        self.clock.tick();
+        let b = self.context.read(addr);
+        self.context.tick();
         b
     }
 
     fn read_byte_at_pc(&mut self) -> u8 {
-        self.read_byte_at(self.cpu.registers.read_register16(Register16::PC))
+        let res = self.read_byte_at(self.cpu.registers.read_register16(Register16::PC));
+        self.cpu.registers.increment_pc();
+        res
     }
 
     fn read_word_at(&mut self, addr: u16) -> u16 {
@@ -180,8 +282,8 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     }
 
     fn write_byte_to(&mut self, addr: u16, b: u8) {
-        self.mem.write(addr, b);
-        self.clock.tick();
+        self.context.write(addr, b);
+        self.context.tick();
     }
 
     fn write_word_to(&mut self, addr: u16, w: u16) {
@@ -206,7 +308,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     fn jr(&mut self) -> Instruction {
         let offset = self.read_byte_at_pc();
         let ioffset = offset as i8;
-        self.clock.tick();
+        self.context.tick();
         self.cpu.registers.write_register16(
             Register16::PC,
             add_i8_to_u16(ioffset, self.cpu.registers.read_register16(Register16::PC)),
@@ -219,7 +321,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let ioffset = offset as i8;
 
         if self.should_jump(cc) {
-            self.clock.tick();
+            self.context.tick();
             self.cpu.registers.write_register16(
                 Register16::PC,
                 add_i8_to_u16(ioffset, self.cpu.registers.read_register16(Register16::PC)),
@@ -242,7 +344,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let l = self.cpu.registers.read_register8(Register8::L);
         let l_res = self.add_8bit(l, lsb);
         self.cpu.registers.write_register8(Register8::L, l_res);
-        self.clock.tick();
+        self.context.tick();
         let h = self.cpu.registers.read_register8(Register8::H);
         let h_res = self.add_8bit_carry(h, msb);
         self.cpu.registers.write_register8(Register8::H, h_res);
@@ -253,7 +355,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     fn add_8bit(&mut self, a: u8, b: u8) -> u8 {
         let (res, carry) = a.carrying_add(b, false);
         let h = (a & 0x0F) + (b & 0x0F) > 0x0F;
-        let z= res == 0;
+        let z = res == 0;
         self.cpu.registers.modify_flags(|f| {
             f.set(Flags::C, carry);
             f.set(Flags::H, h);
@@ -267,7 +369,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let carry = self.cpu.registers.flags().contains(Flags::C);
         let (res, carry) = a.carrying_add(b, carry);
         let h = (a & 0x0F) + (b & 0x0F) + (if carry { 1 } else { 0 }) > 0x0F;
-        let z= res == 0;
+        let z = res == 0;
         self.cpu.registers.modify_flags(|f| {
             f.set(Flags::C, carry);
             f.set(Flags::H, h);
@@ -284,9 +386,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let c = result < 0x00;
         let result = result as u8;
         let z = result == 0;
-        let h = ((a & 0x0F) as i8)
-            .wrapping_sub((b & 0x0F) as i8)
-            < 0x00;
+        let h = ((a & 0x0F) as i8).wrapping_sub((b & 0x0F) as i8) < 0x00;
         self.cpu.registers.modify_flags(|f| {
             f.set(Flags::Z, z);
             f.set(Flags::C, c);
@@ -297,7 +397,11 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     }
 
     fn sub_carry(&mut self, a: u8, b: u8) -> u8 {
-        let carry = if self.cpu.registers.flags().contains(Flags::C) {1} else {0};
+        let carry = if self.cpu.registers.flags().contains(Flags::C) {
+            1
+        } else {
+            0
+        };
         let result = (a as i16).wrapping_sub(b as i16).wrapping_sub(carry);
         let c = result < 0x00;
         let result = result as u8;
@@ -320,7 +424,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let z = result == 0;
         self.cpu.registers.modify_flags(|f| {
             f.set(Flags::Z, z);
-            f.remove(Flags::N| Flags::C);
+            f.remove(Flags::N | Flags::C);
             f.insert(Flags::H);
         });
         result
@@ -380,8 +484,13 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     fn halt(&self) -> Instruction {
         todo!()
     }
-    fn ld_r_r(&self, target: CommonRegister, source: CommonRegister) -> Instruction {
+    fn ld_r_r(&mut self, target: CommonRegister, source: CommonRegister) -> Instruction {
         debug_assert!(target != CommonRegister::HLIndirect || source != CommonRegister::HLIndirect);
+        if target == CommonRegister::Register8(Register8::B) && source == CommonRegister::Register8(Register8::B) {
+            self.context.push_event(ExecutionEvent::DebugTrigger)
+        }
+        let v = self.read_common_register(source);
+        self.write_common_register(target, v);
 
         Instruction::LoadRegisterRegister(target, source)
     }
@@ -422,12 +531,13 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     }
     fn ld_irp_a(&mut self, rp: Register16) -> Instruction {
         let res = self.cpu.registers.read_register8(Register8::A);
-        self.mem.write(self.cpu.registers.read_register16(rp), res);
+        self.context
+            .write(self.cpu.registers.read_register16(rp), res);
         Instruction::LoadIndirectRegisterA(rp)
     }
     fn ld_hlp_a(&mut self) -> Instruction {
         let res = self.cpu.registers.read_register8(Register8::A);
-        self.mem
+        self.context
             .write(self.cpu.registers.read_register16(Register16::HL), res);
         self.cpu.registers.write_register16(
             Register16::HL,
@@ -440,7 +550,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     }
     fn ld_hlm_a(&mut self) -> Instruction {
         let res = self.cpu.registers.read_register8(Register8::A);
-        self.mem
+        self.context
             .write(self.cpu.registers.read_register16(Register16::HL), res);
         self.cpu.registers.write_register16(
             Register16::HL,
@@ -452,14 +562,12 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         Instruction::LoadDecrementHLIndirectA
     }
     fn ld_a_irp(&mut self, rp: Register16) -> Instruction {
-        let res = self.mem.read(self.cpu.registers.read_register16(rp));
+        let res = self.context.read(self.cpu.registers.read_register16(rp));
         self.cpu.registers.write_register8(Register8::A, res);
         Instruction::LoadAIndirectRegister(rp)
     }
     fn ld_a_hlp(&mut self) -> Instruction {
-        let res = self
-            .mem
-            .read(self.cpu.registers.read_register16(Register16::HL));
+        let res = self.read_byte_at(self.cpu.registers.read_register16(Register16::HL));
         self.cpu.registers.write_register16(
             Register16::HL,
             self.cpu
@@ -471,9 +579,7 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         Instruction::LoadAIncrementHLIndirect
     }
     fn ld_a_hlm(&mut self) -> Instruction {
-        let res = self
-            .mem
-            .read(self.cpu.registers.read_register16(Register16::HL));
+        let res = self.read_byte_at(self.cpu.registers.read_register16(Register16::HL));
         self.cpu.registers.write_register16(
             Register16::HL,
             self.cpu
@@ -485,34 +591,28 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         Instruction::LoadADecrementHLIndirect
     }
     fn inc_16(&mut self, rp: Register16) -> Instruction {
-        // TODO assuming intermediate 8bit is not observable, since no flags are set
         self.cpu
             .registers
             .write_register16(rp, self.cpu.registers.read_register16(rp).wrapping_add(1));
-        self.clock.tick();
+        self.context.tick();
         Instruction::IncRegister16(rp)
     }
     fn dec_16(&mut self, rp: Register16) -> Instruction {
-        // TODO assuming intermediate 8bit is not observable, since no flags are set
         self.cpu
             .registers
             .write_register16(rp, self.cpu.registers.read_register16(rp).wrapping_sub(1));
-        self.clock.tick();
+        self.context.tick();
         Instruction::DecRegister16(rp)
     }
     fn inc(&mut self, reg: CommonRegister) -> Instruction {
         let val = self.read_common_register(reg);
         let res = val.wrapping_add(1);
-        let mut flags = Flags::empty();
-        if res == 0 {
-            flags |= Flags::Z;
-        }
-        if (val & 0x0F) + 1 > 0x0F {
-            flags |= Flags::H;
-        }
+        let z = res == 0   ;
+        let h =  (val & 0x0F) + 1 > 0x0F    ;
         self.cpu.registers.modify_flags(|f| {
-            f.insert(flags);
-            f.remove(Flags::H);
+            f.set(Flags::Z, z);
+            f.set(Flags::H, h);
+            f.remove(Flags::N);
         });
 
         self.write_common_register(reg, res);
@@ -520,20 +620,17 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
     }
     fn dec(&mut self, reg: CommonRegister) -> Instruction {
         let val = self.read_common_register(reg);
-        let res = val.wrapping_add(1);
-        let mut flags = Flags::N;
-        if res == 0 {
-            flags |= Flags::Z;
-        }
-        if (val & 0xF0) - 1 < 0x10 {
-            flags |= Flags::H;
-        }
+        let res = val.wrapping_sub(1);
+        let z = res == 0;
+        let h = (val & 0xF0) - 1 < 0x10;
         self.cpu.registers.modify_flags(|f| {
-            f.insert(flags);
+            f.insert(Flags::N);
+            f.set(Flags::Z, z);
+            f.set(Flags::H, h);
         });
 
         self.write_common_register(reg, res);
-        Instruction::IncRegister8(reg)
+        Instruction::DecRegister8(reg)
     }
     fn ld_r_n(&mut self, reg: CommonRegister) -> Instruction {
         let n = self.read_byte_at_pc();
@@ -545,9 +642,9 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let cur_carry = self.cpu.registers.flags().contains(Flags::C);
         let c = a & 0x80 > 0;
         let res = a.rotate_left(1);
-        let res = res & 0xFE | (if cur_carry {1} else {0});
+        let res = res & 0xFE | (if cur_carry { 1 } else { 0 });
         let z = res == 0;
-        self.cpu.registers.modify_flags(|f|{
+        self.cpu.registers.modify_flags(|f| {
             f.set(Flags::C, c);
             f.set(Flags::Z, z);
             f.remove(Flags::H | Flags::N);
@@ -567,9 +664,9 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         let cur_carry = self.cpu.registers.flags().contains(Flags::C);
         let c = a & 0x01 > 0;
         let res = a.rotate_right(1);
-        let res = res & 0x7F | (if cur_carry {0x80} else {0});
+        let res = res & 0x7F | (if cur_carry { 0x80 } else { 0 });
         let z = res == 0;
-        self.cpu.registers.modify_flags(|f|{
+        self.cpu.registers.modify_flags(|f| {
             f.set(Flags::C, c);
             f.set(Flags::Z, z);
             f.remove(Flags::H | Flags::N);
@@ -624,6 +721,49 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
 
         Instruction::RotateARight
     }
+    fn sla(&mut self, register: CommonRegister) -> Instruction {
+        let a = self.read_common_register(register);
+        let c = a & 0x80 > 0;
+        let res = a << 1;
+        let z = res == 0;
+        self.cpu.registers.modify_flags(|f| {
+            f.set(Flags::Z, z);
+            f.set(Flags::C, c);
+            f.remove(Flags::N | Flags::H);
+        });
+        self.write_common_register(register, res);
+
+        Instruction::RotateShiftRegister(RotationShiftOperation::Sla, register)
+    }
+    fn sra(&mut self, register: CommonRegister) -> Instruction {
+        let a = self.read_common_register(register);
+        let c = a & 0x01 > 0;
+        let bit_7 = a & 0x80;
+        let res = a >> 1;
+        let res = (res & 0x7F) | bit_7;
+        let z = res == 0;
+        self.cpu.registers.modify_flags(|f| {
+            f.set(Flags::Z, z);
+            f.set(Flags::C, c);
+            f.remove(Flags::N | Flags::H);
+        });
+        self.write_common_register(register, res);
+        Instruction::RotateShiftRegister(RotationShiftOperation::Sra, register)
+    }
+    fn srl(&mut self, register: CommonRegister) -> Instruction {
+        let a = self.read_common_register(register);
+        let c = a & 0x01 > 0;
+        let res = a >> 1;
+        let res = res & 0x7F;
+        let z = res == 0;
+        self.cpu.registers.modify_flags(|f| {
+            f.set(Flags::Z, z);
+            f.set(Flags::C, c);
+            f.remove(Flags::N | Flags::H);
+        });
+        self.write_common_register(register, res);
+        Instruction::RotateShiftRegister(RotationShiftOperation::Srl, register)
+    }
     fn daa(&mut self) -> Instruction {
         let flags = self.cpu.registers.flags();
         let mut a = self.cpu.registers.read_register8(Register8::A);
@@ -666,10 +806,10 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         Instruction::Complement
     }
     fn scf(&mut self) -> Instruction {
-       self.cpu.registers.modify_flags(|f| {
-           f.remove(Flags::N | Flags::H);
-           f.insert(Flags::C);
-       });
+        self.cpu.registers.modify_flags(|f| {
+            f.remove(Flags::N | Flags::H);
+            f.insert(Flags::C);
+        });
 
         Instruction::Scf
     }
@@ -680,6 +820,205 @@ impl<'a, M: MemoryView, CLOCK: Clock, CONTEXT: ExecuteContext> Execution<'a, M, 
         });
 
         Instruction::Ccf
+    }
+
+    fn ret(&mut self) -> Instruction {
+        self.pop(Register16::PC);
+        self.context.tick();
+
+        Instruction::Return
+    }
+
+    fn ret_cc(&mut self, cc: JumpCondition) -> Instruction {
+        self.context.tick();
+        if self.should_jump(cc) {
+            self.pop(Register16::PC);
+            self.context.tick();
+        }
+
+        Instruction::ReturnConditional(cc)
+    }
+
+    fn pop(&mut self, register: Register16) -> Instruction {
+        let sp = self.cpu.registers.read_register16(Register16::SP);
+        let w = self.read_word_at(sp);
+        self.cpu
+            .registers
+            .write_register16(Register16::SP, sp.wrapping_add(2));
+        self.cpu.registers.write_register16(register, w);
+
+        Instruction::Pop(register)
+    }
+    fn push(&mut self, register: Register16) -> Instruction {
+        let sp = self.cpu.registers.read_register16(Register16::SP);
+        self.context.tick();
+        let w = self.cpu.registers.read_register16(register);
+        self.write_word_to(sp.wrapping_sub(1), w);
+        self.cpu
+            .registers
+            .write_register16(Register16::SP, sp.wrapping_sub(2));
+
+        Instruction::Push(register)
+    }
+    fn ld_io_imm_a(&mut self) -> Instruction {
+        let val = self.cpu.registers.read_register8(Register8::A);
+        let lsb = self.read_byte_at_pc();
+        self.write_byte_to(0xFF00 | (lsb as u16), val);
+
+        Instruction::LoadIOIndirectImmediate8A(Immediate8(lsb))
+    }
+    fn ld_io_a_imm(&mut self) -> Instruction {
+        let lsb = self.read_byte_at_pc();
+        let val = self.read_byte_at(0xFF00 | (lsb as u16));
+        self.cpu.registers.write_register8(Register8::A, val);
+
+        Instruction::LoadIOAIndirectImmediate8(Immediate8(lsb))
+    }
+    fn add_signed_to_sp(&mut self, imm: u8) -> u16 {
+        let sp = self.cpu.registers.read_register16(Register16::SP);
+
+        let lower = sp as u8;
+        let res_h = (lower & 0x0F) + (imm & 0x0F);
+        let h = res_h > 0x0F;
+        let res_lower = (lower as u16) + (imm as u16);
+        let c = res_lower > 0xFF;
+
+        let res = add_i8_to_u16(imm as i8, sp);
+        self.context.tick();
+        self.context.tick();
+
+        self.cpu.registers.modify_flags(|f| {
+            f.remove(Flags::Z | Flags::N);
+            f.set(Flags::H, h);
+            f.set(Flags::C, c);
+        });
+
+        res
+    }
+    fn add_sp_d(&mut self) -> Instruction {
+        let imm = self.read_byte_at_pc();
+        let res = self.add_signed_to_sp(imm);
+        self.cpu.registers.write_register16(Register16::SP, res);
+        Instruction::AddSPImmediate(Immediate8(imm))
+    }
+    fn ld_hl_sp_d(&mut self) -> Instruction {
+        let imm = self.read_byte_at_pc();
+        let res = self.add_signed_to_sp(imm);
+        self.cpu.registers.write_register16(Register16::HL, res);
+        Instruction::LoadHLSPImmediate(Immediate8(imm))
+    }
+    fn reti(&mut self) -> Instruction {
+        self.ret();
+        self.cpu.interrupt_master_enable = true;
+
+        Instruction::ReturnInterrupt
+    }
+
+    fn ld_sp_hl(&mut self) -> Instruction {
+        self.cpu.registers.write_register16(
+            Register16::SP,
+            self.cpu.registers.read_register16(Register16::HL),
+        );
+
+        Instruction::LoadSPHL
+    }
+    fn jp_cc(&mut self, cc: JumpCondition) -> Instruction {
+        let imm = self.read_word_at_pc();
+        if self.should_jump(cc) {
+            self.context.tick();
+            self.cpu.registers.write_register16(Register16::PC, imm)
+        }
+        Instruction::JumpConditionalImmediate(cc, Immediate16(imm))
+    }
+    fn ld_io_c_a(&mut self) -> Instruction {
+        let val = self.cpu.registers.read_register8(Register8::A);
+        let addr = 0xFF00 | (self.cpu.registers.read_register8(Register8::C) as u16);
+        self.write_byte_to(addr, val);
+
+        Instruction::LoadIOIndirectCA
+    }
+    fn ld_io_a_c(&mut self) -> Instruction {
+        let addr = 0xFF00 | (self.cpu.registers.read_register8(Register8::C) as u16);
+        let val = self.read_byte_at(addr);
+        self.cpu.registers.write_register8(Register8::A, val);
+
+        Instruction::LoadIOAIndirectC
+    }
+    fn ld_inn_a(&mut self) -> Instruction {
+        let addr = self.read_word_at_pc();
+        let val = self.cpu.registers.read_register8(Register8::A);
+        self.write_byte_to(addr, val);
+
+        Instruction::LoadIndirectImmediate16A(Immediate16(addr))
+    }
+    fn ld_a_inn(&mut self) -> Instruction {
+        let addr = self.read_word_at_pc();
+        let val = self.read_byte_at(addr);
+        self.cpu.registers.write_register8(Register8::A, val);
+
+        Instruction::LoadAIndirectImmediate16(Immediate16(addr))
+    }
+    fn jp(&mut self) -> Instruction {
+        let addr = self.read_word_at_pc();
+        self.context.tick();
+        self.cpu.registers.write_register16(Register16::PC, addr);
+
+        Instruction::JumpImmediate(Immediate16(addr))
+    }
+    fn jp_hl(&mut self) -> Instruction {
+        let addr = self.cpu.registers.read_register16(Register16::HL);
+        self.cpu.registers.write_register16(Register16::PC, addr);
+        Instruction::JumpHL
+    }
+    fn di(&mut self) -> Instruction {
+        self.cpu.schedule_ime = false;
+        self.cpu.interrupt_master_enable = false;
+
+        Instruction::DI
+    }
+    fn ei(&mut self) -> Instruction {
+        // TODO actually enable this on clock tick
+        self.cpu.schedule_ime = true;
+
+        Instruction::EI
+    }
+    fn call(&mut self) -> Instruction {
+        let target = self.read_word_at_pc();
+        self.context.tick();
+        self.push(Register16::PC);
+        self.cpu.registers.write_register16(Register16::PC, target);
+
+        Instruction::CallImmediate(Immediate16(target))
+    }
+    fn call_cc(&mut self, cc: JumpCondition) -> Instruction {
+        let target = self.read_word_at_pc();
+        if self.should_jump(cc) {
+            self.context.tick();
+            self.push(Register16::PC);
+            self.cpu.registers.write_register16(Register16::PC, target);
+        }
+
+        Instruction::CallConditionalImmediate(cc, Immediate16(target))
+    }
+    fn rst(&mut self, vector: ResetVector) -> Instruction {
+        let target = vector.address();
+        self.push(Register16::PC);
+        self.cpu.registers.write_register16(Register16::PC, target);
+
+        Instruction::Reset(vector)
+    }
+    fn rotate_shift(&mut self, op: RotationShiftOperation, reg: CommonRegister) -> Instruction {
+        match op {
+            RotationShiftOperation::Rlc => self.rl(reg),
+            RotationShiftOperation::Rrc => self.rrc(reg),
+            RotationShiftOperation::Rl => self.rl(reg),
+            RotationShiftOperation::Rr => self.rr(reg),
+            // RotationShiftOperation::Sla => {}
+            // RotationShiftOperation::Sra => {}
+            // RotationShiftOperation::Swap => {}
+            // RotationShiftOperation::Srl => {}
+            _ => todo!(),
+        }
     }
 }
 
@@ -695,88 +1034,76 @@ mod tests {
     #[test]
     fn noop() {
         let mut cpu = Cpu::default();
-        let mut memory = TestMemoryView::default();
-        memory.mem[1] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[1] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(instruction, Instruction::Nop);
+        assert_eq!(context.instruction.unwrap(), Instruction::Nop);
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 1);
+        assert_eq!(context.cycles, 1);
     }
 
     #[test]
     fn ld_inn_sp() {
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::SP, 0x1234);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0] = 0x08;
-        memory.mem[1] = 0x10;
-        memory.mem[2] = 0x00;
-        memory.mem[3] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0] = 0x08;
+        context.mem[1] = 0x10;
+        context.mem[2] = 0x00;
+        context.mem[3] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
-            instruction,
+            context.instruction.unwrap(),
             Instruction::LoadIndirectImmediate16SP(Immediate16(0x0010))
         );
-        assert_eq!(memory.mem[0x0010], 0x34);
-        assert_eq!(memory.mem[0x0011], 0x12);
+        assert_eq!(context.mem[0x0010], 0x34);
+        assert_eq!(context.mem[0x0011], 0x12);
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 5);
+        assert_eq!(context.cycles, 5);
     }
 
     #[test]
     fn jr_positive() {
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::PC, 0x1234);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0x1234] = 0x18;
-        memory.mem[0x1235] = 0x05;
-        memory.mem[0x123B] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0x1234] = 0x18;
+        context.mem[0x1235] = 0x05;
+        context.mem[0x123B] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(instruction, Instruction::JumpRelative(Immediate8(0x05)));
+        assert_eq!(context.instruction.unwrap(), Instruction::JumpRelative(Immediate8(0x05)));
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 3);
+        assert_eq!(context.cycles, 3);
     }
 
     #[test]
     fn jr_negative() {
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::PC, 0x1234);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0x1234] = 0x18;
-        memory.mem[0x1235] = 0xFD;
-        memory.mem[0x1233] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0x1234] = 0x18;
+        context.mem[0x1235] = 0xFD;
+        context.mem[0x1233] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(instruction, Instruction::JumpRelative(Immediate8(0xFD)));
+        assert_eq!(context.instruction.unwrap(), Instruction::JumpRelative(Immediate8(0xFD)));
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 3);
+        assert_eq!(context.cycles, 3);
     }
 
     #[test]
@@ -784,48 +1111,42 @@ mod tests {
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::PC, 0x1234);
         cpu.registers.modify_flags(|f| f.insert(Flags::Z));
-        let mut memory = TestMemoryView::default();
-        memory.mem[0x1234] = 0b00101000;
-        memory.mem[0x1235] = 0x05;
-        memory.mem[0x123B] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0x1234] = 0b00101000;
+        context.mem[0x1235] = 0x05;
+        context.mem[0x123B] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
-            instruction,
+            context.instruction.unwrap(),
             Instruction::JumpConditionalRelative(JumpCondition::Z, Immediate8(0x05))
         );
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 3);
+        assert_eq!(context.cycles, 3);
     }
 
     #[test]
     fn jr_cc_not_taken() {
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::PC, 0x1234);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0x1234] = 0b00101000;
-        memory.mem[0x1235] = 0x05;
-        memory.mem[0x1236] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0x1234] = 0b00101000;
+        context.mem[0x1235] = 0x05;
+        context.mem[0x1236] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
-            instruction,
+            context.instruction.unwrap(),
             Instruction::JumpConditionalRelative(JumpCondition::Z, Immediate8(0x05))
         );
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 2);
+        assert_eq!(context.cycles, 2);
     }
 
     #[test]
@@ -833,42 +1154,36 @@ mod tests {
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::HL, 0xFFFF);
         cpu.registers.write_register16(Register16::BC, 0x0001);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0] = 0x09;
-        memory.mem[1] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0] = 0x09;
+        context.mem[1] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(instruction, Instruction::AddHLRegister(Register16::BC));
+        assert_eq!(context.instruction.unwrap(), Instruction::AddHLRegister(Register16::BC));
         assert_eq!(cpu.registers.read_register16(Register16::HL), 0);
         assert_eq!(cpu.registers.flags(), Flags::Z | Flags::H | Flags::C);
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 2);
+        assert_eq!(context.cycles, 2);
 
         let mut cpu = Cpu::default();
         cpu.registers.write_register16(Register16::HL, 0x0EFF);
         cpu.registers.write_register16(Register16::BC, 0x0001);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0] = 0x09;
-        memory.mem[1] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0] = 0x09;
+        context.mem[1] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(instruction, Instruction::AddHLRegister(Register16::BC));
+        assert_eq!(context.instruction.unwrap(), Instruction::AddHLRegister(Register16::BC));
         assert_eq!(cpu.registers.read_register16(Register16::HL), 0x0F00);
         assert_eq!(cpu.registers.flags(), Flags::empty());
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 2);
+        assert_eq!(context.cycles, 2);
     }
 
     #[test]
@@ -876,22 +1191,48 @@ mod tests {
         let mut cpu = Cpu::default();
         cpu.registers.write_register8(Register8::A, 10);
         cpu.registers.write_register8(Register8::B, 5);
-        let mut memory = TestMemoryView::default();
-        memory.mem[0] = 0x90;
-        memory.mem[1] = 0xFF;
-        let mut clock = CycleCountingClock::default();
-        let mut context = NoopContext::default();
+        let mut context = TestContext::default();
+        context.mem[0] = 0x90;
+        context.mem[1] = 0xFF;
 
-        let opcode = cpu.get_first_opcode(&memory);
+        let opcode = cpu.get_first_opcode(&mut context);
 
-        let (instruction, next_opcode) =
-            cpu.decode_execute_fetch(opcode, &mut memory, &mut clock, &mut context);
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(instruction, Instruction::AluRegister(ArithmeticOperation::Sub, CommonRegister::Register8(Register8::B)));
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AluRegister(
+                ArithmeticOperation::Sub,
+                CommonRegister::Register8(Register8::B)
+            )
+        );
         assert_eq!(cpu.registers.read_register8(Register8::A), 5);
         assert_eq!(cpu.registers.flags(), Flags::N);
         assert_eq!(next_opcode, 0xFF);
-        assert_eq!(clock.cycles, 1);
+        assert_eq!(context.cycles, 1);
+    }
+
+    #[test]
+    fn rst() {
+        let mut cpu = Cpu::default();
+        cpu.registers.write_register8(Register8::A, 10);
+        cpu.registers.write_register8(Register8::B, 5);
+        let mut context = TestContext::default();
+        context.mem[0] = 0xD7;
+        context.mem[0x10] = 0xFF;
+
+        let opcode = cpu.get_first_opcode(&mut context);
+
+        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::Reset(ResetVector::Two)
+        );
+        assert_eq!(cpu.registers.read_register16(Register16::PC), 0x11);
+        assert_eq!(next_opcode, 0xFF);
+        assert_eq!(context.cycles, 4);
+
     }
 
     #[test]

@@ -77,6 +77,21 @@ pub struct Registers {
 }
 
 impl Registers {
+    pub fn after_boot_rom() -> Self {
+        Self {
+            a: 0,
+            f: Flags::empty(),
+            b: 0,
+            c: 0,
+            d: 0,
+            e: 0,
+            h: 0,
+            l: 0,
+            sp: 0xFFFE,
+            pc: 0x0100,
+        }
+    }
+
     pub fn read_register8(&self, reg: Register8) -> u8 {
         match reg {
             Register8::A => self.a,
@@ -152,12 +167,12 @@ impl Registers {
 
 impl std::fmt::Display for Registers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "a: {:#04x}\tf: {:#04X}", self.a, self.f.bits)?;
-        writeln!(f, "b: {:#04x}\tc: {:#04X}", self.b, self.c)?;
-        writeln!(f, "d: {:#04x}\te: {:#04X}", self.d, self.e)?;
-        writeln!(f, "h: {:#04x}\tl: {:#04X}", self.h, self.l)?;
-        writeln!(f, "sp: {:#06X}", self.sp)?;
-        writeln!(f, "pc: {:#06X}", self.pc)?;
+        writeln!(f, "a: {:#04x}\tf: {:#04x}", self.a, self.f.bits)?;
+        writeln!(f, "b: {:#04x}\tc: {:#04x}", self.b, self.c)?;
+        writeln!(f, "d: {:#04x}\te: {:#04x}", self.d, self.e)?;
+        writeln!(f, "h: {:#04x}\tl: {:#04x}", self.h, self.l)?;
+        writeln!(f, "sp: {:#06x}", self.sp)?;
+        writeln!(f, "pc: {:#06x}", self.pc)?;
 
         writeln!(f, "flags: {}", self.f)?;
 
