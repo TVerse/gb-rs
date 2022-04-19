@@ -1,4 +1,4 @@
-use crate::core::{Addressable, ExecutionEvent};
+use crate::core::Addressable;
 use bitflags::bitflags;
 
 bitflags! {
@@ -17,14 +17,19 @@ pub struct Serial {
 }
 
 impl Serial {
-    pub fn get_data(&mut self) -> Option<u8>{
-        if self.control.contains(Control::TRANSFER_START) && !self.control.contains(Control::IS_INTERNAL_CLOCK) {
+    pub fn get_data(&mut self) -> Option<u8> {
+        if self.control.contains(Control::TRANSFER_START)
+            && !self.control.contains(Control::IS_INTERNAL_CLOCK)
+        {
             unimplemented!("Serial external clock")
         }
 
-        if self.control.contains(Control::TRANSFER_START | Control::IS_INTERNAL_CLOCK) {
+        if self
+            .control
+            .contains(Control::TRANSFER_START | Control::IS_INTERNAL_CLOCK)
+        {
             self.control.remove(Control::TRANSFER_START);
-            return Some(self.data)
+            return Some(self.data);
         }
 
         None

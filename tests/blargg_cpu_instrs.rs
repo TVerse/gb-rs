@@ -1,7 +1,7 @@
+use gb_rs::{parse_into_cartridge, GameBoy};
 use paste::paste;
 use std::fs;
 use std::path::Path;
-use gb_rs::{GameBoy, parse_into_cartridge};
 
 macro_rules! blargg_test {
     ($n:expr) => {
@@ -34,7 +34,7 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
-const MAX_CYCLES: u64= 10_000_000;
+const MAX_CYCLES: u64 = 10_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");

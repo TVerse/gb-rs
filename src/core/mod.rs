@@ -1,13 +1,12 @@
-use std::{fs, mem};
-use std::path::Path;
 use crate::core::cartridge::Cartridge;
-use crate::core::cpu::Cpu;
 use crate::core::cpu::instructions::Instruction;
 use crate::core::cpu::registers::Registers;
+use crate::core::cpu::Cpu;
 use crate::core::serial::Serial;
 use crate::core::wram::WorkRam;
 use crate::core::ExecutionEvent::ReadFromNonMappedAddress;
-
+use std::path::Path;
+use std::{fs, mem};
 
 pub mod cartridge;
 pub mod cpu;
@@ -17,7 +16,6 @@ mod testsupport;
 mod wram;
 
 const KIB: usize = 1024;
-const FULL_ADDRESS_SPACE: usize = 64 * KIB;
 
 pub struct HexAddress(pub u16);
 
@@ -35,13 +33,13 @@ impl std::fmt::Display for HexAddress {
 
 pub struct HexByte(pub u8);
 
-impl std::fmt::Debug for HexByte{
+impl std::fmt::Debug for HexByte {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
 }
 
-impl std::fmt::Display for HexByte{
+impl std::fmt::Display for HexByte {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:#04x}", self.0)
     }
@@ -71,8 +69,15 @@ impl std::fmt::Display for ExecutionEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ReadFromNonMappedAddress(a) => write!(f, "ReadFromNonMappedAddress({})", a),
-            ExecutionEvent::WriteToNonMappedAddress(a) => write!(f, "WriteToNonMappedAddress({})", a),
-            ExecutionEvent::InstructionExecuted { opcode, instruction, new_pc, registers } => {
+            ExecutionEvent::WriteToNonMappedAddress(a) => {
+                write!(f, "WriteToNonMappedAddress({})", a)
+            }
+            ExecutionEvent::InstructionExecuted {
+                opcode,
+                instruction,
+                new_pc,
+                registers,
+            } => {
                 writeln!(f, "InstructionExecuted")?;
                 writeln!(f, "Opcode: {}", opcode)?;
                 writeln!(f, "{}", instruction)?;
@@ -169,7 +174,9 @@ impl GameBoy {
     }
 
     pub fn execute_instruction(&mut self) {
-        let new_opcode = self.cpu.decode_execute_fetch(self.next_opcode, &mut self.context);
+        let new_opcode = self
+            .cpu
+            .decode_execute_fetch(self.next_opcode, &mut self.context);
         self.next_opcode = new_opcode;
     }
 
@@ -188,11 +195,7 @@ impl GameBoy {
             v.push(self.context.read(i as u16));
         }
         fs::write(format!("{}/cpu.txt", base), format!("{}", self.cpu)).unwrap();
-        fs::write(
-            format!("{}/address_space.bin", base),
-            v,
-        )
-            .unwrap();
+        fs::write(format!("{}/address_space.bin", base), v).unwrap();
         log::info!("Dump done!")
     }
 }

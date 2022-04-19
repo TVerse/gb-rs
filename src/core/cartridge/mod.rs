@@ -3,10 +3,10 @@ mod rom_only;
 
 use crate::core::cartridge::mbc1::Mbc1Cartridge;
 use crate::core::cartridge::rom_only::RomOnlyCartridge;
-use std::fmt::Debug;
-use crate::core::Addressable;
 
-pub trait Cartridge: Debug{
+use std::fmt::Debug;
+
+pub trait Cartridge: Debug {
     fn read(&self, address: u16) -> Option<u8>;
     fn write(&mut self, address: u16, byte: u8) -> Option<()>;
 }

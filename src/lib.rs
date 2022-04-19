@@ -2,7 +2,7 @@
 
 mod core;
 
-pub use crate::core::GameBoy;
 pub use crate::core::cartridge::parse_into_cartridge;
+pub use crate::core::cpu::registers::{Flags, Register16, Register8};
 pub use crate::core::ExecutionEvent;
-pub use crate::core::cpu::registers::{Register16, Register8, Flags};
+pub use crate::core::GameBoy;

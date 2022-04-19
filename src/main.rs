@@ -1,9 +1,9 @@
 use simplelog::*;
-use std::{env, fs};
 use std::fs::File;
 use std::path::Path;
+use std::{env, fs};
 
-use gb_rs::{ExecutionEvent, GameBoy, parse_into_cartridge, Register8};
+use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy};
 
 fn main() {
     let default_path: String = "gb-test-roms/cpu_instrs/individual/09-op r,r.gb".to_owned();
@@ -20,7 +20,7 @@ fn main() {
             File::create("gb_rs.log").unwrap(),
         ),
     ])
-        .unwrap();
+    .unwrap();
 
     let args: Vec<String> = env::args().collect();
 
@@ -40,7 +40,11 @@ fn main() {
         for e in gb.take_events() {
             if !in_step {
                 match &e {
-                    ExecutionEvent::InstructionExecuted { new_pc, registers, .. } if new_pc.0 == 0xC000 => {
+                    ExecutionEvent::InstructionExecuted {
+                        new_pc,
+                        registers: _,
+                        ..
+                    } if new_pc.0 == 0xC000 => {
                         log::info!("Stepping...");
                         in_step = true;
                     }
@@ -68,8 +72,6 @@ fn main() {
                     gb.dump("dump");
                 } else if read.contains('q') {
                     return;
-                } else if read.contains('n') {
-                    break;
                 } else {
                     break;
                 }

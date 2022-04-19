@@ -1,6 +1,7 @@
-use super::FULL_ADDRESS_SPACE;
-use crate::core::{ExecuteContext, ExecutionEvent};
 use crate::core::cpu::instructions::Instruction;
+use crate::core::{ExecuteContext, ExecutionEvent, KIB};
+
+const FULL_ADDRESS_SPACE: usize = 64 * KIB;
 
 #[derive(Debug)]
 pub struct TestContext {
@@ -21,9 +22,8 @@ impl Default for TestContext {
 
 impl ExecuteContext for TestContext {
     fn push_event(&mut self, event: ExecutionEvent) {
-        match event {
-            ExecutionEvent::InstructionExecuted { instruction, ..} => self.instruction = Some(instruction),
-            _ => {}
+        if let ExecutionEvent::InstructionExecuted { instruction, .. } = event {
+            self.instruction = Some(instruction)
         }
     }
 

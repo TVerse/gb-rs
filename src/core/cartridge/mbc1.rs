@@ -32,7 +32,7 @@ impl Cartridge for Mbc1Cartridge {
                 self.rom_bank = byte;
                 Some(())
             }
-            _ => None
+            _ => None,
         }
     }
 }

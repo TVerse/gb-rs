@@ -17,7 +17,7 @@ impl Cartridge for RomOnlyCartridge {
         self.rom.get(address as usize).copied()
     }
 
-    fn write(&mut self, _address: u16, _byte: u8) -> Option<()>{
+    fn write(&mut self, _address: u16, _byte: u8) -> Option<()> {
         None
     }
 }

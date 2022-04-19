@@ -38,11 +38,7 @@ impl Cpu {
         opcode
     }
 
-    pub fn decode_execute_fetch<C: ExecuteContext >(
-        &mut self,
-        opcode: u8,
-        context: &mut C,
-    ) -> u8 {
+    pub fn decode_execute_fetch<C: ExecuteContext>(&mut self, opcode: u8, context: &mut C) -> u8 {
         let mut execution = Execution { cpu: self, context };
         execution.decode_execute_fetch(opcode)
     }
@@ -61,12 +57,12 @@ impl std::fmt::Display for Cpu {
     }
 }
 
-struct Execution<'a, C: ExecuteContext > {
+struct Execution<'a, C: ExecuteContext> {
     cpu: &'a mut Cpu,
     context: &'a mut C,
 }
 
-impl<'a, C: ExecuteContext > Execution<'a, C> {
+impl<'a, C: ExecuteContext> Execution<'a, C> {
     /*
        Notes:
        * Post-increment PC, always. Current PC is suitable for use/peeking.
@@ -76,9 +72,9 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
     pub fn decode_execute_fetch(&mut self, opcode: u8) -> u8 {
         let x = (opcode & 0b11000000) >> 6;
         let y = (opcode & 0b00111000) >> 3;
-        let z = (opcode & 0b00000111) >> 0;
+        let z = opcode & 0b00000111;
         let p = (y & 0b110) >> 1;
-        let q = (y & 0b1) >> 0;
+        let q = y & 0b1;
         let instruction: Instruction = match x {
             0 => self.x_is_0_tree(y, z, p, q),
             1 => {
@@ -98,12 +94,13 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
             3 => self.x_is_3_tree(y, z, p, q),
             _ => panic!("Invalid opcode"),
         };
-        self.context.push_event(ExecutionEvent::InstructionExecuted {
-            opcode: HexByte(opcode),
-            instruction,
-            new_pc: HexAddress(self.cpu.registers.read_register16(Register16::PC)),
-            registers: self.cpu.registers.clone()
-        });
+        self.context
+            .push_event(ExecutionEvent::InstructionExecuted {
+                opcode: HexByte(opcode),
+                instruction,
+                new_pc: HexAddress(self.cpu.registers.read_register16(Register16::PC)),
+                registers: self.cpu.registers.clone(),
+            });
         self.fetch_opcode()
     }
 
@@ -246,7 +243,7 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
         let opcode = self.read_byte_at_pc();
         let x = (opcode & 0b11000000) >> 6;
         let y = (opcode & 0b00111000) >> 3;
-        let z = (opcode & 0b00000111) >> 0;
+        let z = opcode & 0b00000111;
         match x {
             0 => self.rotate_shift(
                 RotationShiftOperation::from_u8(y),
@@ -328,12 +325,6 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
             );
         }
         Instruction::JumpConditionalRelative(cc, Immediate8(offset))
-    }
-
-    fn load_rp_nn(&mut self, rp: Register16) -> Instruction {
-        let nn = self.read_word_at_pc();
-        self.cpu.registers.write_register16(rp, nn);
-        Instruction::LoadRegisterImmediate16(rp, Immediate16(nn))
     }
 
     fn add_hl_rp(&mut self, rp: Register16) -> Instruction {
@@ -486,7 +477,9 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
     }
     fn ld_r_r(&mut self, target: CommonRegister, source: CommonRegister) -> Instruction {
         debug_assert!(target != CommonRegister::HLIndirect || source != CommonRegister::HLIndirect);
-        if target == CommonRegister::Register8(Register8::B) && source == CommonRegister::Register8(Register8::B) {
+        if target == CommonRegister::Register8(Register8::B)
+            && source == CommonRegister::Register8(Register8::B)
+        {
             self.context.push_event(ExecutionEvent::DebugTrigger)
         }
         let v = self.read_common_register(source);
@@ -607,8 +600,8 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
     fn inc(&mut self, reg: CommonRegister) -> Instruction {
         let val = self.read_common_register(reg);
         let res = val.wrapping_add(1);
-        let z = res == 0   ;
-        let h =  (val & 0x0F) + 1 > 0x0F    ;
+        let z = res == 0;
+        let h = (val & 0x0F) + 1 > 0x0F;
         self.cpu.registers.modify_flags(|f| {
             f.set(Flags::Z, z);
             f.set(Flags::H, h);
@@ -763,6 +756,16 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
         });
         self.write_common_register(register, res);
         Instruction::RotateShiftRegister(RotationShiftOperation::Srl, register)
+    }
+    fn swap(&mut self, register: CommonRegister) -> Instruction {
+        let a = self.read_common_register(register);
+        let res = ((a & 0xF0) >> 4) | ((a & 0x0F) << 4);
+
+        self.cpu
+            .registers
+            .modify_flags(|f| f.set(Flags::Z, res == 0));
+
+        Instruction::RotateShiftRegister(RotationShiftOperation::Swap, register)
     }
     fn daa(&mut self) -> Instruction {
         let flags = self.cpu.registers.flags();
@@ -1013,11 +1016,10 @@ impl<'a, C: ExecuteContext > Execution<'a, C> {
             RotationShiftOperation::Rrc => self.rrc(reg),
             RotationShiftOperation::Rl => self.rl(reg),
             RotationShiftOperation::Rr => self.rr(reg),
-            // RotationShiftOperation::Sla => {}
-            // RotationShiftOperation::Sra => {}
-            // RotationShiftOperation::Swap => {}
-            // RotationShiftOperation::Srl => {}
-            _ => todo!(),
+            RotationShiftOperation::Sla => self.sla(reg),
+            RotationShiftOperation::Sra => self.sra(reg),
+            RotationShiftOperation::Swap => self.swap(reg),
+            RotationShiftOperation::Srl => self.srl(reg),
         }
     }
 }
@@ -1058,7 +1060,7 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
             context.instruction.unwrap(),
@@ -1081,9 +1083,12 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(context.instruction.unwrap(), Instruction::JumpRelative(Immediate8(0x05)));
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::JumpRelative(Immediate8(0x05))
+        );
         assert_eq!(next_opcode, 0xFF);
         assert_eq!(context.cycles, 3);
     }
@@ -1099,9 +1104,12 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(context.instruction.unwrap(), Instruction::JumpRelative(Immediate8(0xFD)));
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::JumpRelative(Immediate8(0xFD))
+        );
         assert_eq!(next_opcode, 0xFF);
         assert_eq!(context.cycles, 3);
     }
@@ -1118,7 +1126,7 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
             context.instruction.unwrap(),
@@ -1139,7 +1147,7 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
             context.instruction.unwrap(),
@@ -1160,9 +1168,12 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(context.instruction.unwrap(), Instruction::AddHLRegister(Register16::BC));
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AddHLRegister(Register16::BC)
+        );
         assert_eq!(cpu.registers.read_register16(Register16::HL), 0);
         assert_eq!(cpu.registers.flags(), Flags::Z | Flags::H | Flags::C);
         assert_eq!(next_opcode, 0xFF);
@@ -1177,9 +1188,12 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
-        assert_eq!(context.instruction.unwrap(), Instruction::AddHLRegister(Register16::BC));
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AddHLRegister(Register16::BC)
+        );
         assert_eq!(cpu.registers.read_register16(Register16::HL), 0x0F00);
         assert_eq!(cpu.registers.flags(), Flags::empty());
         assert_eq!(next_opcode, 0xFF);
@@ -1197,7 +1211,7 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
             context.instruction.unwrap(),
@@ -1223,7 +1237,7 @@ mod tests {
 
         let opcode = cpu.get_first_opcode(&mut context);
 
-        let (next_opcode) = cpu.decode_execute_fetch(opcode, &mut context);
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context);
 
         assert_eq!(
             context.instruction.unwrap(),
@@ -1232,7 +1246,6 @@ mod tests {
         assert_eq!(cpu.registers.read_register16(Register16::PC), 0x11);
         assert_eq!(next_opcode, 0xFF);
         assert_eq!(context.cycles, 4);
-
     }
 
     #[test]
