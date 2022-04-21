@@ -1,7 +1,7 @@
 use crate::core::cartridge::Cartridge;
 use crate::core::cpu::instructions::Instruction;
 use crate::core::cpu::registers::Registers;
-use crate::core::cpu::Cpu;
+use crate::core::cpu::{Cpu, CpuError};
 use crate::core::serial::Serial;
 use crate::core::wram::WorkRam;
 use crate::core::ExecutionEvent::ReadFromNonMappedAddress;
@@ -173,11 +173,12 @@ impl GameBoy {
         mem::replace(&mut self.context.events, Vec::with_capacity(100))
     }
 
-    pub fn execute_instruction(&mut self) {
+    pub fn execute_instruction(&mut self) -> Result<(), CpuError> {
         let new_opcode = self
             .cpu
-            .decode_execute_fetch(self.next_opcode, &mut self.context);
+            .decode_execute_fetch(self.next_opcode, &mut self.context)?;
         self.next_opcode = new_opcode;
+        Ok(())
     }
 
     pub fn get_serial_out(&mut self) -> Option<u8> {

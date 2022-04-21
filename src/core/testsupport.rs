@@ -20,6 +20,12 @@ impl Default for TestContext {
     }
 }
 
+impl TestContext {
+    pub fn reset_cycles(&mut self) {
+        self.cycles = 0;
+    }
+}
+
 impl ExecuteContext for TestContext {
     fn push_event(&mut self, event: ExecutionEvent) {
         if let ExecutionEvent::InstructionExecuted { instruction, .. } = event {

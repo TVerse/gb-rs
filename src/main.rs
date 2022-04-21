@@ -2,11 +2,12 @@ use simplelog::*;
 use std::fs::File;
 use std::path::Path;
 use std::{env, fs};
+use std::error::Error;
 
-use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy};
+use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy, Instruction, RotationShiftOperation, CommonRegister, Register8};
 
-fn main() {
-    let default_path: String = "gb-test-roms/cpu_instrs/individual/09-op r,r.gb".to_owned();
+fn main() -> Result<(), Box<dyn Error>> {
+    let default_path: String = "gb-test-roms/cpu_instrs/individual/06-ld r,r.gb".to_owned();
     CombinedLogger::init(vec![
         TermLogger::new(
             LevelFilter::Info,
@@ -15,7 +16,7 @@ fn main() {
             ColorChoice::Auto,
         ),
         WriteLogger::new(
-            LevelFilter::Trace,
+            LevelFilter::Debug,
             Config::default(),
             File::create("gb_rs.log").unwrap(),
         ),
@@ -35,7 +36,11 @@ fn main() {
     let mut in_step = false;
 
     loop {
-        gb.execute_instruction();
+        let res = gb.execute_instruction();
+        if res.is_err() {
+            gb.dump("crashdump");
+        }
+        res?;
         log::trace!("Events:");
         for e in gb.take_events() {
             if !in_step {
@@ -43,10 +48,15 @@ fn main() {
                     ExecutionEvent::InstructionExecuted {
                         new_pc,
                         registers: _,
+                        instruction,
                         ..
-                    } if new_pc.0 == 0xC000 => {
+                    } if new_pc.0 == 0xCC3E => {
                         log::info!("Stepping...");
-                        in_step = true;
+                        // in_step = true;
+                    }
+                    ExecutionEvent::DebugTrigger => {
+                        log::info!("Debug trigger!");
+                        // in_step = true;
                     }
                     _ => {}
                 }
@@ -58,8 +68,13 @@ fn main() {
             log::trace!("{}", &e);
         }
         if let Some(serial) = gb.get_serial_out() {
+            // in_step = true;
             serial_out.push(serial);
-            log::info!("Got serial:\n{}", String::from_utf8_lossy(&serial_out));
+            let serial = String::from_utf8_lossy(&serial_out);
+            log::info!("Got serial:\n{}", serial);
+            if serial.contains("Failed") {
+                gb.dump("failure_dump");
+            }
         }
         if in_step {
             loop {
@@ -71,7 +86,7 @@ fn main() {
                 } else if read.contains('d') {
                     gb.dump("dump");
                 } else if read.contains('q') {
-                    return;
+                    return Ok(());
                 } else {
                     break;
                 }

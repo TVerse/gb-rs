@@ -1,4 +1,5 @@
 /target
 dump*
+*dump
 gb_rs.log
 .idea

@@ -34,7 +34,7 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
-const MAX_CYCLES: u64 = 10_000_000;
+const MAX_CYCLES: u64 = 100_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
@@ -64,7 +64,7 @@ fn execute_test(rom: Vec<u8>) {
                 String::from_utf8_lossy(&serial_out[0..take])
             )
         }
-        gb.execute_instruction();
+        gb.execute_instruction().unwrap();
         if let Some(serial) = gb.get_serial_out() {
             serial_out.push(serial);
         }
