@@ -6,7 +6,7 @@ use crate::core::cpu::instructions::{
     ResetVector, RotationShiftOperation,
 };
 use crate::core::cpu::registers::{Flags, Register16, Register8};
-use crate::core::{ExecuteContext, ExecutionEvent, HexAddress, HexByte};
+use crate::core::{EventContext, ExecuteContext, ExecutionEvent, HexAddress, HexByte};
 use registers::Registers;
 
 use thiserror::Error;
@@ -14,7 +14,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CpuError {
     #[error("Invalid opcode: {0}")]
-    InvalidOpcode(u8)
+    InvalidOpcode(u8),
 }
 
 /*
@@ -45,7 +45,11 @@ impl Cpu {
         opcode
     }
 
-    pub fn decode_execute_fetch<C: ExecuteContext>(&mut self, opcode: u8, context: &mut C) -> Result<u8, CpuError> {
+    pub fn decode_execute_fetch<C: ExecuteContext + EventContext>(
+        &mut self,
+        opcode: u8,
+        context: &mut C,
+    ) -> Result<u8, CpuError> {
         let mut execution = Execution { cpu: self, context };
         execution.decode_execute_fetch(opcode)
     }
@@ -64,12 +68,12 @@ impl std::fmt::Display for Cpu {
     }
 }
 
-struct Execution<'a, C: ExecuteContext> {
+struct Execution<'a, C: ExecuteContext + EventContext> {
     cpu: &'a mut Cpu,
     context: &'a mut C,
 }
 
-impl<'a, C: ExecuteContext> Execution<'a, C> {
+impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
     /*
        Notes:
        * Post-increment PC, always. Current PC is suitable for use/peeking.
@@ -183,7 +187,14 @@ impl<'a, C: ExecuteContext> Execution<'a, C> {
         }
     }
 
-    fn x_is_3_tree(&mut self, opcode: u8, y: u8, z: u8, p: u8, q: u8) -> Result<Instruction, CpuError> {
+    fn x_is_3_tree(
+        &mut self,
+        opcode: u8,
+        y: u8,
+        z: u8,
+        p: u8,
+        q: u8,
+    ) -> Result<Instruction, CpuError> {
         let instruction = match z {
             0 => match y {
                 0..=3 => self.ret_cc(JumpCondition::from_u8(y)),

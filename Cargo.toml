@@ -12,6 +12,7 @@ simplelog = "0.11.2"
 strum = "0.23.0"
 strum_macros = "0.23.1"
 bitflags = "1.3.2"
+clap = { version = "3.1.10", features = ["derive"] }
 
 [dev-dependencies]
 paste = "1.0.6"

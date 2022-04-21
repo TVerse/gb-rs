@@ -1,5 +1,5 @@
 use crate::core::cpu::instructions::Instruction;
-use crate::core::{ExecuteContext, ExecutionEvent, KIB};
+use crate::core::{EventContext, ExecuteContext, ExecutionEvent, KIB};
 
 const FULL_ADDRESS_SPACE: usize = 64 * KIB;
 
@@ -27,12 +27,6 @@ impl TestContext {
 }
 
 impl ExecuteContext for TestContext {
-    fn push_event(&mut self, event: ExecutionEvent) {
-        if let ExecutionEvent::InstructionExecuted { instruction, .. } = event {
-            self.instruction = Some(instruction)
-        }
-    }
-
     fn tick(&mut self) {
         self.cycles += 1;
     }
@@ -43,5 +37,13 @@ impl ExecuteContext for TestContext {
 
     fn write(&mut self, addr: u16, value: u8) {
         self.mem[addr as usize] = value
+    }
+}
+
+impl EventContext for TestContext {
+    fn push_event(&mut self, event: ExecutionEvent) {
+        if let ExecutionEvent::InstructionExecuted { instruction, .. } = event {
+            self.instruction = Some(instruction)
+        }
     }
 }

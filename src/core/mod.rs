@@ -5,6 +5,7 @@ use crate::core::cpu::{Cpu, CpuError};
 use crate::core::serial::Serial;
 use crate::core::wram::WorkRam;
 use crate::core::ExecutionEvent::ReadFromNonMappedAddress;
+use crate::ExecutionEvent::{MemoryRead, MemoryWritten};
 use std::path::Path;
 use std::{fs, mem};
 
@@ -46,14 +47,19 @@ impl std::fmt::Display for HexByte {
 }
 
 pub trait ExecuteContext {
-    fn push_event(&mut self, event: ExecutionEvent);
     fn tick(&mut self);
     fn read(&mut self, addr: u16) -> u8;
     fn write(&mut self, addr: u16, value: u8);
 }
 
+pub trait EventContext {
+    fn push_event(&mut self, event: ExecutionEvent);
+}
+
 #[derive(Debug)]
 pub enum ExecutionEvent {
+    MemoryRead(HexAddress),
+    MemoryWritten(HexAddress),
     ReadFromNonMappedAddress(HexAddress),
     WriteToNonMappedAddress(HexAddress),
     InstructionExecuted {
@@ -82,9 +88,12 @@ impl std::fmt::Display for ExecutionEvent {
                 writeln!(f, "Opcode: {}", opcode)?;
                 writeln!(f, "{}", instruction)?;
                 writeln!(f, "PC after instruction: {}", new_pc)?;
+                writeln!(f, "Registers:")?;
                 write!(f, "{}", registers)
             }
             ExecutionEvent::DebugTrigger => write!(f, "DebugTrigger"),
+            MemoryRead(addr) => write!(f, "MemoryRead({})", addr),
+            MemoryWritten(addr) => write!(f, "MemoryWritten({})", addr),
         }
     }
 }
@@ -118,15 +127,12 @@ impl GameboyContext {
 }
 
 impl ExecuteContext for GameboyContext {
-    fn push_event(&mut self, event: ExecutionEvent) {
-        self.events.push(event)
-    }
-
     fn tick(&mut self) {
         self.clock_counter += 1;
     }
 
     fn read(&mut self, addr: u16) -> u8 {
+        self.push_event(MemoryRead(HexAddress(addr)));
         self.wram
             .read(addr)
             .or_else(|| self.serial.read(addr))
@@ -138,12 +144,25 @@ impl ExecuteContext for GameboyContext {
     }
 
     fn write(&mut self, addr: u16, value: u8) {
+        self.push_event(MemoryWritten(HexAddress(addr)));
         self.wram
             .write(addr, value)
             .or_else(|| self.serial.write(addr, value))
             .unwrap_or_else(|| {
                 self.push_event(ReadFromNonMappedAddress(HexAddress(addr)));
             });
+    }
+}
+
+impl EventContext for Vec<ExecutionEvent> {
+    fn push_event(&mut self, event: ExecutionEvent) {
+        self.push(event)
+    }
+}
+
+impl EventContext for GameboyContext {
+    fn push_event(&mut self, event: ExecutionEvent) {
+        self.events.push_event(event)
     }
 }
 

@@ -1,32 +1,69 @@
 use simplelog::*;
+use std::error::Error;
 use std::fs::File;
 use std::path::Path;
 use std::{env, fs};
-use std::error::Error;
+use clap::Parser;
+use clap::ArgEnum;
 
-use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy, Instruction, RotationShiftOperation, CommonRegister, Register8};
+use gb_rs::{
+    parse_into_cartridge, CommonRegister, ExecutionEvent, GameBoy, Instruction, Register8,
+    RotationShiftOperation,
+};
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
+    file_log_level: LogLevel,
+
+    #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
+    console_log_level: LogLevel,
+
+    #[clap(default_value_t = String::from("gb-test-roms/cpu_instrs/individual/06-ld r,r.gb"))]
+    path: String,
+}
+
+#[derive(ArgEnum, Copy, Clone, Debug)]
+enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    fn as_level_filter(&self) -> LevelFilter {
+        match self {
+            LogLevel::Trace => LevelFilter::Trace,
+            LogLevel::Debug => LevelFilter::Debug,
+            LogLevel::Info => LevelFilter::Info,
+            LogLevel::Warn => LevelFilter::Warn,
+            LogLevel::Error => LevelFilter::Error,
+        }
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let default_path: String = "gb-test-roms/cpu_instrs/individual/06-ld r,r.gb".to_owned();
+    let args: Args = Args::parse();
+
     CombinedLogger::init(vec![
         TermLogger::new(
-            LevelFilter::Info,
+            args.console_log_level.as_level_filter(),
             Config::default(),
             TerminalMode::Mixed,
             ColorChoice::Auto,
         ),
         WriteLogger::new(
-            LevelFilter::Debug,
+            args.file_log_level.as_level_filter(),
             Config::default(),
             File::create("gb_rs.log").unwrap(),
         ),
     ])
-    .unwrap();
+        .unwrap();
 
-    let args: Vec<String> = env::args().collect();
-
-    let path = args.get(1).unwrap_or(&default_path);
-    log::info!("Loading from path: {}", path);
+    let path = args.path;
 
     let cartridge = parse_into_cartridge(load_rom(path));
 
