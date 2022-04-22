@@ -269,7 +269,9 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
                 RotationShiftOperation::from_u8(y),
                 CommonRegister::from_u8(z),
             ),
-            1 | 2 | 3 => todo!(),
+            1 => self.bit(y, CommonRegister::from_u8(z)),
+            2 => self.res(y, CommonRegister::from_u8(z)),
+            3 => self.set(y, CommonRegister::from_u8(z)),
             _ => unreachable!(),
         }
     }
@@ -315,6 +317,35 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
         Instruction::Nop
     }
 
+    fn bit(&mut self, bit: u8, reg: CommonRegister) -> Instruction {
+        debug_assert!(bit <= 7);
+        let value = self.read_common_register(reg);
+        let z = value & (1 << bit) == 0;
+        self.cpu.registers.modify_flags(|f| {
+            f.set(Flags::Z, z);
+            f.insert(Flags::H);
+            f.remove(Flags::N);
+        });
+
+        Instruction::BitRegister(bit, reg)
+    }
+
+    fn set(&mut self, bit: u8, reg: CommonRegister) -> Instruction {
+        debug_assert!(bit <= 7);
+        let value = self.read_common_register(reg);
+        let res = value | (1 << bit);
+        self.write_common_register(reg, res);
+        Instruction::SetRegister(bit, reg)
+    }
+
+    fn res(&mut self, bit: u8, reg: CommonRegister) -> Instruction {
+        debug_assert!(bit <= 7);
+        let value = self.read_common_register(reg);
+        let res = value & !(1 << bit);
+        self.write_common_register(reg, res);
+        Instruction::ResRegister(bit, reg)
+    }
+
     fn ld_inn_sp(&mut self) -> Instruction {
         let addr = self.read_word_at_pc();
         let sp = self.cpu.registers.read_register16(Register16::SP);
@@ -352,6 +383,7 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
         let lsb = src as u8;
         let msb = (src >> 8) as u8;
 
+        let z = self.cpu.registers.flags().contains(Flags::Z);
         let l = self.cpu.registers.read_register8(Register8::L);
         let l_res = self.add_8bit(l, lsb);
         self.cpu.registers.write_register8(Register8::L, l_res);
@@ -359,6 +391,7 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
         let h = self.cpu.registers.read_register8(Register8::H);
         let h_res = self.add_8bit_carry(h, msb);
         self.cpu.registers.write_register8(Register8::H, h_res);
+        self.cpu.registers.modify_flags(|f| f.set(Flags::Z, z));
 
         Instruction::AddHLRegister(rp)
     }
@@ -377,9 +410,9 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
     }
 
     fn add_8bit_carry(&mut self, a: u8, b: u8) -> u8 {
-        let carry = self.cpu.registers.flags().contains(Flags::C);
-        let (res, carry) = a.carrying_add(b, carry);
-        let h = (a & 0x0F) + (b & 0x0F) + (if carry { 1 } else { 0 }) > 0x0F;
+        let carry_in = self.cpu.registers.flags().contains(Flags::C);
+        let (res, carry) = a.carrying_add(b, carry_in);
+        let h = (a & 0x0F) + (b & 0x0F) + (if carry_in { 1 } else { 0 }) > 0x0F;
         let z = res == 0;
         self.cpu.registers.modify_flags(|f| {
             f.set(Flags::C, carry);
@@ -631,7 +664,7 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
         let val = self.read_common_register(reg);
         let res = val.wrapping_sub(1);
         let z = res == 0;
-        let h = (val & 0xF0).wrapping_sub(1) < 0x10;
+        let h = val & 0xF == 0;
         self.cpu.registers.modify_flags(|f| {
             f.insert(Flags::N);
             f.set(Flags::Z, z);
@@ -778,9 +811,10 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
         let res = ((a & 0xF0) >> 4) | ((a & 0x0F) << 4);
         self.write_common_register(register, res);
 
-        self.cpu
-            .registers
-            .modify_flags(|f| f.set(Flags::Z, res == 0));
+        self.cpu.registers.modify_flags(|f| {
+            f.set(Flags::Z, res == 0);
+            f.remove(Flags::C | Flags::N | Flags::H);
+        });
 
         Instruction::RotateShiftRegister(RotationShiftOperation::Swap, register)
     }
@@ -1029,7 +1063,7 @@ impl<'a, C: ExecuteContext + EventContext> Execution<'a, C> {
     }
     fn rotate_shift(&mut self, op: RotationShiftOperation, reg: CommonRegister) -> Instruction {
         match op {
-            RotationShiftOperation::Rlc => self.rl(reg),
+            RotationShiftOperation::Rlc => self.rlc(reg),
             RotationShiftOperation::Rrc => self.rrc(reg),
             RotationShiftOperation::Rl => self.rl(reg),
             RotationShiftOperation::Rr => self.rr(reg),
@@ -1192,7 +1226,7 @@ mod tests {
             Instruction::AddHLRegister(Register16::BC)
         );
         assert_eq!(cpu.registers.read_register16(Register16::HL), 0);
-        assert_eq!(cpu.registers.flags(), Flags::Z | Flags::H | Flags::C);
+        assert_eq!(cpu.registers.flags(), Flags::H | Flags::C);
         assert_eq!(next_opcode, 0xFF);
         assert_eq!(context.cycles, 2);
 
@@ -1204,6 +1238,7 @@ mod tests {
         context.mem[1] = 0xFF;
 
         let opcode = cpu.get_first_opcode(&mut context);
+        cpu.registers.modify_flags(|f| f.insert(Flags::Z));
 
         let next_opcode = cpu.decode_execute_fetch(opcode, &mut context).unwrap();
 
@@ -1212,7 +1247,7 @@ mod tests {
             Instruction::AddHLRegister(Register16::BC)
         );
         assert_eq!(cpu.registers.read_register16(Register16::HL), 0x0F00);
-        assert_eq!(cpu.registers.flags(), Flags::empty());
+        assert_eq!(cpu.registers.flags(), Flags::Z);
         assert_eq!(next_opcode, 0xFF);
         assert_eq!(context.cycles, 2);
     }
@@ -1324,6 +1359,131 @@ mod tests {
         assert_eq!(cpu.registers.read_register16(Register16::SP), 0x4000);
         assert_eq!(cpu.registers.read_register16(Register16::DE), 0x0102);
         assert_eq!(next_opcode, 0xFF);
+    }
+
+    #[test]
+    fn add_8bit_carry() {
+        let mut cpu = Cpu::default();
+        cpu.registers.write_register8(Register8::A, 10);
+        cpu.registers.write_register8(Register8::B, 5);
+        let mut context = TestContext::default();
+        context.mem[0] = 0x88;
+        context.mem[1] = 0xFF;
+
+        let opcode = cpu.get_first_opcode(&mut context);
+
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context).unwrap();
+
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AluRegister(
+                ArithmeticOperation::AdcA,
+                CommonRegister::Register8(Register8::B)
+            )
+        );
+        assert_eq!(cpu.registers.read_register8(Register8::A), 15);
+        assert_eq!(cpu.registers.flags(), Flags::empty());
+        assert_eq!(next_opcode, 0xFF);
+        assert_eq!(context.cycles, 1);
+    }
+
+    #[test]
+    fn add_8bit_carry_carry_in() {
+        let mut cpu = Cpu::default();
+        cpu.registers.write_register8(Register8::A, 10);
+        cpu.registers.write_register8(Register8::B, 5);
+        cpu.registers.modify_flags(|f| f.insert(Flags::C));
+        let mut context = TestContext::default();
+        context.mem[0] = 0x88;
+        context.mem[1] = 0xFF;
+
+        let opcode = cpu.get_first_opcode(&mut context);
+
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context).unwrap();
+
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AluRegister(
+                ArithmeticOperation::AdcA,
+                CommonRegister::Register8(Register8::B)
+            )
+        );
+        assert_eq!(cpu.registers.read_register8(Register8::A), 16);
+        assert_eq!(cpu.registers.flags(), Flags::H);
+        assert_eq!(next_opcode, 0xFF);
+        assert_eq!(context.cycles, 1);
+    }
+
+    #[test]
+    fn add_hl_bc_1() {
+        let mut cpu = Cpu::default();
+        cpu.registers.write_register16(Register16::HL, 0x0FFF);
+        cpu.registers.write_register16(Register16::BC, 1);
+        let mut context = TestContext::default();
+        context.mem[0] = 0x09;
+        context.mem[1] = 0xFF;
+
+        let opcode = cpu.get_first_opcode(&mut context);
+
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context).unwrap();
+
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AddHLRegister(Register16::BC)
+        );
+        assert_eq!(cpu.registers.read_register16(Register16::HL), 0x1000);
+        assert_eq!(cpu.registers.flags(), Flags::H);
+        assert_eq!(next_opcode, 0xFF);
+        assert_eq!(context.cycles, 2);
+    }
+
+    #[test]
+    fn add_hl_bc_2() {
+        let mut cpu = Cpu::default();
+        cpu.registers.write_register16(Register16::HL, 0xFFFF);
+        cpu.registers.write_register16(Register16::BC, 1);
+        let mut context = TestContext::default();
+        context.mem[0] = 0x09;
+        context.mem[1] = 0xFF;
+
+        let opcode = cpu.get_first_opcode(&mut context);
+
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context).unwrap();
+
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::AddHLRegister(Register16::BC)
+        );
+        assert_eq!(cpu.registers.read_register16(Register16::HL), 0x0000);
+        assert_eq!(cpu.registers.flags(), Flags::H | Flags::C);
+        assert_eq!(next_opcode, 0xFF);
+        assert_eq!(context.cycles, 2);
+    }
+
+    #[test]
+    fn swap() {
+        let mut cpu = Cpu::default();
+        cpu.registers.write_register8(Register8::C, 0x12);
+        let mut context = TestContext::default();
+        context.mem[0] = 0xCB;
+        context.mem[1] = 0x31;
+        context.mem[2] = 0xFF;
+
+        let opcode = cpu.get_first_opcode(&mut context);
+
+        let next_opcode = cpu.decode_execute_fetch(opcode, &mut context).unwrap();
+
+        assert_eq!(
+            context.instruction.unwrap(),
+            Instruction::RotateShiftRegister(
+                RotationShiftOperation::Swap,
+                CommonRegister::Register8(Register8::C)
+            )
+        );
+        assert_eq!(cpu.registers.read_register8(Register8::C), 0x21);
+        assert_eq!(cpu.registers.flags(), Flags::empty());
+        assert_eq!(next_opcode, 0xFF);
+        assert_eq!(context.cycles, 2);
     }
 
     #[test]

@@ -2,9 +2,9 @@ use clap::ArgEnum;
 use clap::Parser;
 use simplelog::*;
 use std::error::Error;
+use std::fs;
 use std::fs::File;
 use std::path::Path;
-use std::fs;
 
 use gb_rs::{
     parse_into_cartridge, CommonRegister, ExecutionEvent, GameBoy, Instruction, Register16,
@@ -20,7 +20,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
     console_log_level: LogLevel,
 
-    #[clap(default_value_t = String::from("gb-test-roms/cpu_instrs/individual/06-ld r,r.gb"))]
+    #[clap(default_value_t = String::from("gb-test-roms/cpu_instrs/individual/09-op r,r.gb"))]
     path: String,
 }
 
@@ -87,7 +87,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         registers: _,
                         instruction,
                         ..
-                    } if *instruction == Instruction::Push(Register16::DE) => {
+                    } if *instruction
+                        == Instruction::RotateShiftRegister(
+                            RotationShiftOperation::Rlc,
+                            CommonRegister::Register8(Register8::C),
+                        ) =>
+                    {
                         log::info!("Stepping...");
                         // in_step = true;
                     }

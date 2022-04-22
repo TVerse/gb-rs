@@ -129,77 +129,109 @@ impl std::fmt::Display for Instruction {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
-#[repr(u8)]
 pub enum ArithmeticOperation {
-    AddA = 0,
-    AdcA = 1,
-    Sub = 2,
-    SbcA = 3,
-    And = 4,
-    Xor = 5,
-    Or = 6,
-    Cp = 7,
+    AddA,
+    AdcA,
+    Sub,
+    SbcA,
+    And,
+    Xor,
+    Or,
+    Cp,
 }
 
 impl ArithmeticOperation {
     pub fn from_u8(b: u8) -> Self {
         assert!(b <= 7);
-        unsafe { std::mem::transmute::<_, Self>(b) }
+        match b {
+            0 => Self::AddA,
+            1 => Self::AdcA,
+            2 => Self::Sub,
+            3 => Self::SbcA,
+            4 => Self::And,
+            5 => Self::Xor,
+            6 => Self::Or,
+            7 => Self::Cp,
+            _ => unreachable!(),
+        }
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
-#[repr(u8)]
 pub enum RotationShiftOperation {
-    Rlc = 0,
-    Rrc = 1,
-    Rl = 2,
-    Rr = 3,
-    Sla = 4,
-    Sra = 5,
-    Swap = 6,
-    Srl = 7,
+    Rlc,
+    Rrc,
+    Rl,
+    Rr,
+    Sla,
+    Sra,
+    Swap,
+    Srl,
 }
 
 impl RotationShiftOperation {
     pub fn from_u8(b: u8) -> Self {
         assert!(b <= 7);
-        unsafe { std::mem::transmute::<_, Self>(b) }
+        match b {
+            0 => Self::Rlc,
+            1 => Self::Rrc,
+            2 => Self::Rl,
+            3 => Self::Rr,
+            4 => Self::Sla,
+            5 => Self::Sra,
+            6 => Self::Swap,
+            7 => Self::Srl,
+            _ => unreachable!(),
+        }
     }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
-#[repr(u8)]
 pub enum JumpCondition {
-    NZ = 0,
-    Z = 1,
-    NC = 2,
-    C = 3,
+    NZ,
+    Z,
+    NC,
+    C,
 }
 
 impl JumpCondition {
     pub fn from_u8(b: u8) -> Self {
         assert!(b <= 3);
-        unsafe { std::mem::transmute::<_, Self>(b) }
+        match b {
+            0 => Self::NZ,
+            1 => Self::Z,
+            2 => Self::NC,
+            3 => Self::C,
+            _ => unreachable!(),
+        }
     }
 }
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[repr(u8)]
 pub enum ResetVector {
-    Zero = 0,
-    One = 1,
-    Two = 2,
-    Three = 3,
-    Four = 4,
-    Five = 5,
-    Six = 6,
-    Seven = 7,
+    Zero,
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
 }
 
 impl ResetVector {
     pub fn from_u8(b: u8) -> Self {
         assert!(b <= 7);
-        unsafe { std::mem::transmute::<_, Self>(b) }
+        match b {
+            0 => Self::Zero,
+            1 => Self::One,
+            2 => Self::Two,
+            3 => Self::Three,
+            4 => Self::Four,
+            5 => Self::Five,
+            6 => Self::Six,
+            7 => Self::Seven,
+            _ => unreachable!(),
+        }
     }
 
     pub fn address(&self) -> u16 {
