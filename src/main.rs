@@ -1,14 +1,14 @@
+use clap::ArgEnum;
+use clap::Parser;
 use simplelog::*;
 use std::error::Error;
 use std::fs::File;
 use std::path::Path;
-use std::{env, fs};
-use clap::Parser;
-use clap::ArgEnum;
+use std::fs;
 
 use gb_rs::{
-    parse_into_cartridge, CommonRegister, ExecutionEvent, GameBoy, Instruction, Register8,
-    RotationShiftOperation,
+    parse_into_cartridge, CommonRegister, ExecutionEvent, GameBoy, Instruction, Register16,
+    Register8, RotationShiftOperation,
 };
 
 #[derive(Parser, Debug)]
@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             File::create("gb_rs.log").unwrap(),
         ),
     ])
-        .unwrap();
+    .unwrap();
 
     let path = args.path;
 
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         registers: _,
                         instruction,
                         ..
-                    } if new_pc.0 == 0xCC3E => {
+                    } if *instruction == Instruction::Push(Register16::DE) => {
                         log::info!("Stepping...");
                         // in_step = true;
                     }
@@ -101,8 +101,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             if in_step {
                 log::info!("{}", &e)
+            } else {
+                log::trace!("{}", &e);
             }
-            log::trace!("{}", &e);
         }
         if let Some(serial) = gb.get_serial_out() {
             // in_step = true;

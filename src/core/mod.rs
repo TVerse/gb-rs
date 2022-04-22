@@ -2,6 +2,7 @@ use crate::core::cartridge::Cartridge;
 use crate::core::cpu::instructions::Instruction;
 use crate::core::cpu::registers::Registers;
 use crate::core::cpu::{Cpu, CpuError};
+use crate::core::high_ram::HighRam;
 use crate::core::serial::Serial;
 use crate::core::wram::WorkRam;
 use crate::core::ExecutionEvent::ReadFromNonMappedAddress;
@@ -11,6 +12,7 @@ use std::{fs, mem};
 
 pub mod cartridge;
 pub mod cpu;
+mod high_ram;
 mod serial;
 #[cfg(test)]
 mod testsupport;
@@ -58,8 +60,14 @@ pub trait EventContext {
 
 #[derive(Debug)]
 pub enum ExecutionEvent {
-    MemoryRead(HexAddress),
-    MemoryWritten(HexAddress),
+    MemoryRead {
+        address: HexAddress,
+        value: HexByte,
+    },
+    MemoryWritten {
+        address: HexAddress,
+        value: HexByte,
+    },
     ReadFromNonMappedAddress(HexAddress),
     WriteToNonMappedAddress(HexAddress),
     InstructionExecuted {
@@ -92,8 +100,12 @@ impl std::fmt::Display for ExecutionEvent {
                 write!(f, "{}", registers)
             }
             ExecutionEvent::DebugTrigger => write!(f, "DebugTrigger"),
-            MemoryRead(addr) => write!(f, "MemoryRead({})", addr),
-            MemoryWritten(addr) => write!(f, "MemoryWritten({})", addr),
+            MemoryRead { address, value } => {
+                write!(f, "MemoryRead{{address: {}, value: {}}}", address, value)
+            }
+            MemoryWritten { address, value } => {
+                write!(f, "MemoryWritten{{address: {}, value: {}}}", address, value)
+            }
         }
     }
 }
@@ -111,6 +123,7 @@ pub struct GameboyContext {
     cartridge: Box<dyn Cartridge>,
     wram: WorkRam,
     serial: Serial,
+    high_ram: HighRam,
     events: Vec<ExecutionEvent>,
 }
 
@@ -121,6 +134,7 @@ impl GameboyContext {
             cartridge,
             wram: WorkRam::default(),
             serial: Serial::default(),
+            high_ram: HighRam::default(),
             events: Vec::with_capacity(100),
         }
     }
@@ -132,25 +146,36 @@ impl ExecuteContext for GameboyContext {
     }
 
     fn read(&mut self, addr: u16) -> u8 {
-        self.push_event(MemoryRead(HexAddress(addr)));
-        self.wram
+        let result = self
+            .wram
             .read(addr)
             .or_else(|| self.serial.read(addr))
             .or_else(|| self.cartridge.read(addr))
+            .or_else(|| self.high_ram.read(addr))
             .unwrap_or_else(|| {
                 self.push_event(ReadFromNonMappedAddress(HexAddress(addr)));
                 0xFF
-            })
+            });
+        self.push_event(MemoryRead {
+            address: HexAddress(addr),
+            value: HexByte(result),
+        });
+        result
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        self.push_event(MemoryWritten(HexAddress(addr)));
         self.wram
             .write(addr, value)
             .or_else(|| self.serial.write(addr, value))
+            .or_else(|| self.cartridge.write(addr, value))
+            .or_else(|| self.high_ram.write(addr, value))
             .unwrap_or_else(|| {
                 self.push_event(ReadFromNonMappedAddress(HexAddress(addr)));
             });
+        self.push_event(MemoryWritten {
+            address: HexAddress(addr),
+            value: HexByte(value),
+        })
     }
 }
 
