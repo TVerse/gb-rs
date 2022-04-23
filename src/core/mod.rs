@@ -1,7 +1,6 @@
 use crate::core::cartridge::Cartridge;
-use crate::core::cpu::instructions::Instruction;
-use crate::core::cpu::registers::Registers;
-use crate::core::cpu::{Cpu, CpuError};
+use execution::instructions::Instruction;
+use registers::Registers;
 use crate::core::high_ram::HighRam;
 use crate::core::serial::Serial;
 use crate::core::wram::WorkRam;
@@ -9,14 +8,16 @@ use crate::core::ExecutionEvent::ReadFromNonMappedAddress;
 use crate::ExecutionEvent::{MemoryRead, MemoryWritten};
 use std::path::Path;
 use std::{fs, mem};
+use crate::core::execution::{decode_execute_fetch, ExecutionError, get_first_opcode};
 
 pub mod cartridge;
-pub mod cpu;
 mod high_ram;
 mod serial;
 #[cfg(test)]
 mod testsupport;
 mod wram;
+pub mod execution;
+pub mod registers;
 
 const KIB: usize = 1024;
 
@@ -192,18 +193,18 @@ impl EventContext for GameboyContext {
 }
 
 pub struct GameBoy {
-    cpu: Cpu,
+    registers: Registers,
     context: GameboyContext,
     next_opcode: u8,
 }
 
 impl GameBoy {
     pub fn new(cartridge: Box<dyn Cartridge>) -> Self {
-        let mut cpu = Cpu::after_boot_rom();
+        let mut registers = Registers::after_boot_rom();
         let mut context = GameboyContext::new(cartridge);
-        let initial_opcode = cpu.get_first_opcode(&mut context);
+        let initial_opcode = get_first_opcode(&mut registers, &mut context);
         Self {
-            cpu,
+            registers,
             context,
             next_opcode: initial_opcode,
         }
@@ -217,10 +218,9 @@ impl GameBoy {
         mem::replace(&mut self.context.events, Vec::with_capacity(100))
     }
 
-    pub fn execute_instruction(&mut self) -> Result<(), CpuError> {
-        let new_opcode = self
-            .cpu
-            .decode_execute_fetch(self.next_opcode, &mut self.context)?;
+    pub fn execute_instruction(&mut self) -> Result<(), ExecutionError> {
+        let new_opcode =
+            decode_execute_fetch(&mut self.registers, self.next_opcode, &mut self.context)?;
         self.next_opcode = new_opcode;
         Ok(())
     }
@@ -239,7 +239,7 @@ impl GameBoy {
         for i in 0..64 * KIB {
             v.push(self.context.read(i as u16));
         }
-        fs::write(format!("{}/cpu.txt", base), format!("{}", self.cpu)).unwrap();
+        fs::write(format!("{}/cpu.txt", base), format!("{}", self.registers)).unwrap();
         fs::write(format!("{}/address_space.bin", base), v).unwrap();
         log::info!("Dump done!")
     }

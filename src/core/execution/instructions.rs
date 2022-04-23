@@ -1,4 +1,4 @@
-use crate::core::cpu::registers::{Register16, Register8};
+use crate::core::registers::{Register16, Register8};
 use strum_macros::Display;
 
 #[derive(Copy, Clone, Eq, PartialEq)]

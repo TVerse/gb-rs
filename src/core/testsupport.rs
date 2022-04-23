@@ -1,4 +1,4 @@
-use crate::core::cpu::instructions::Instruction;
+use crate::core::execution::instructions::Instruction;
 use crate::core::{EventContext, ExecuteContext, ExecutionEvent, KIB};
 
 const FULL_ADDRESS_SPACE: usize = 64 * KIB;
