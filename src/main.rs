@@ -7,8 +7,8 @@ use std::fs::File;
 use std::path::Path;
 
 use gb_rs::{
-    parse_into_cartridge, CommonRegister, ExecutionEvent, GameBoy, Instruction, Register16,
-    Register8, RotationShiftOperation,
+    parse_into_cartridge, ArithmeticOperation, CommonRegister, ExecutionEvent, GameBoy, Immediate8,
+    Instruction, Register16, Register8, RotationShiftOperation,
 };
 
 #[derive(Parser, Debug)]
@@ -20,7 +20,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
     console_log_level: LogLevel,
 
-    #[clap(default_value_t = String::from("gb-test-roms/cpu_instrs/individual/09-op r,r.gb"))]
+    #[clap(default_value_t = String::from("gb-test-roms/cpu_instrs/individual/02-interrupts.gb"))]
     path: String,
 }
 
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut in_step = false;
 
     loop {
-        let res = gb.execute_instruction();
+        let res = gb.execute_operation();
         if res.is_err() {
             gb.dump("crashdump");
         }
@@ -84,21 +84,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match &e {
                     ExecutionEvent::InstructionExecuted {
                         new_pc,
-                        registers: _,
+                        cpu,
                         instruction,
                         ..
                     } if *instruction
-                        == Instruction::RotateShiftRegister(
-                            RotationShiftOperation::Rlc,
-                            CommonRegister::Register8(Register8::C),
+                        == Instruction::AluImmediate(
+                            ArithmeticOperation::And,
+                            Immediate8(0x04),
                         ) =>
                     {
                         log::info!("Stepping...");
-                        // in_step = true;
+                        in_step = true;
                     }
                     ExecutionEvent::DebugTrigger => {
                         log::info!("Debug trigger!");
                         // in_step = true;
+                    }
+                    ExecutionEvent::MemoryWritten { address, value }
+                        if address.0 == 0xFF07 && value.0 == 0x05 =>
+                    {
+                        log::info!("Stepping...");
+                        in_step = true;
                     }
                     _ => {}
                 }
@@ -117,6 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             log::info!("Got serial:\n{}", serial);
             if serial.contains("Failed") {
                 gb.dump("failure_dump");
+                return Err("Failed".to_string().into());
             }
         }
         if in_step {

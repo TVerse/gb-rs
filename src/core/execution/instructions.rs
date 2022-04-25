@@ -1,4 +1,4 @@
-use crate::core::registers::{Register16, Register8};
+use crate::core::cpu::{Register16, Register8};
 use strum_macros::Display;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -118,7 +118,7 @@ pub enum Instruction {
     CallConditionalImmediate(JumpCondition, Immediate16),
     Return,
     ReturnConditional(JumpCondition),
-    ReturnInterrupt,
+    ReturnFromInterrupt,
     Reset(ResetVector),
 }
 

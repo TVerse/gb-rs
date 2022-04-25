@@ -64,7 +64,7 @@ fn execute_test(rom: Vec<u8>) {
                 String::from_utf8_lossy(&serial_out[0..take])
             )
         }
-        gb.execute_instruction().unwrap();
+        gb.execute_operation().unwrap();
         if let Some(serial) = gb.get_serial_out() {
             serial_out.push(serial);
         }

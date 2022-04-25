@@ -16,6 +16,7 @@ impl std::fmt::Display for Flags {
         write!(f, "{:?}", self)
     }
 }
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Display)]
 pub enum Register8 {
     A,
@@ -62,8 +63,20 @@ impl Register16 {
     }
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum State {
+    Running,
+    Halted,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self::Running
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct Registers {
+pub struct Cpu {
     a: u8,
     f: Flags,
     b: u8,
@@ -74,9 +87,10 @@ pub struct Registers {
     l: u8,
     sp: u16,
     pc: u16,
+    state: State,
 }
 
-impl Registers {
+impl Cpu {
     pub fn after_boot_rom() -> Self {
         Self {
             a: 0,
@@ -89,6 +103,7 @@ impl Registers {
             l: 0,
             sp: 0xFFFE,
             pc: 0x0100,
+            state: State::Running,
         }
     }
 
@@ -163,9 +178,17 @@ impl Registers {
     pub fn modify_flags(&mut self, f: impl FnOnce(&mut Flags)) {
         f(&mut self.f)
     }
+
+    pub fn state(&self) -> State {
+        self.state
+    }
+
+    pub fn set_state(&mut self, state: State) {
+        self.state = state;
+    }
 }
 
-impl std::fmt::Display for Registers {
+impl std::fmt::Display for Cpu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "a: {:#04x}\tf: {:#04x}", self.a, self.f.bits)?;
         writeln!(f, "b: {:#04x}\tc: {:#04x}", self.b, self.c)?;

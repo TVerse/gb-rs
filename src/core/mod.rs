@@ -1,35 +1,37 @@
 use crate::core::cartridge::Cartridge;
+use crate::core::execution::{get_first_opcode, ExecutionError, NextOperation};
+use crate::core::interrupt_controller::{Interrupt, InterruptController};
+use crate::core::timer::Timer;
+use cpu::Cpu;
 use execution::instructions::Instruction;
-use registers::Registers;
-use crate::core::high_ram::HighRam;
-use crate::core::serial::Serial;
-use crate::core::wram::WorkRam;
-use crate::core::ExecutionEvent::ReadFromNonMappedAddress;
-use crate::ExecutionEvent::{MemoryRead, MemoryWritten};
+use high_ram::HighRam;
+use serial::Serial;
 use std::path::Path;
 use std::{fs, mem};
-use crate::core::execution::{decode_execute_fetch, ExecutionError, get_first_opcode};
+use wram::WorkRam;
 
 pub mod cartridge;
-mod high_ram;
-mod serial;
+pub mod cpu;
+pub mod execution;
+pub mod high_ram;
+mod interrupt_controller;
+pub mod serial;
 #[cfg(test)]
 mod testsupport;
-mod wram;
-pub mod execution;
-pub mod registers;
+mod timer;
+pub mod wram;
 
 const KIB: usize = 1024;
 
-pub struct HexAddress(pub u16);
+pub struct HexWord(pub u16);
 
-impl std::fmt::Debug for HexAddress {
+impl std::fmt::Debug for HexWord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
 }
 
-impl std::fmt::Display for HexAddress {
+impl std::fmt::Display for HexWord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:#06x}", self.0)
     }
@@ -49,8 +51,7 @@ impl std::fmt::Display for HexByte {
     }
 }
 
-pub trait ExecuteContext {
-    fn tick(&mut self);
+pub trait MemoryContext {
     fn read(&mut self, addr: u16) -> u8;
     fn write(&mut self, addr: u16, value: u8);
 }
@@ -59,31 +60,57 @@ pub trait EventContext {
     fn push_event(&mut self, event: ExecutionEvent);
 }
 
+pub trait ClockContext {
+    fn tick(&mut self);
+}
+
+pub trait InterruptContext {
+    fn raise_interrupt(&mut self, interrupt: Interrupt);
+}
+
+pub trait HandleInterruptContext {
+    fn unraise_interrupt(&mut self, interrupt: Interrupt);
+
+    fn should_start_interrupt_routine(&self) -> bool;
+
+    fn get_highest_priority_interrupt(&self) -> Option<Interrupt>;
+
+    fn schedule_ime_enable(&mut self);
+
+    fn enable_interrupts(&mut self);
+
+    fn disable_interrupts(&mut self);
+}
+
 #[derive(Debug)]
 pub enum ExecutionEvent {
     MemoryRead {
-        address: HexAddress,
+        address: HexWord,
         value: HexByte,
     },
     MemoryWritten {
-        address: HexAddress,
+        address: HexWord,
         value: HexByte,
     },
-    ReadFromNonMappedAddress(HexAddress),
-    WriteToNonMappedAddress(HexAddress),
+    ReadFromNonMappedAddress(HexWord),
+    WriteToNonMappedAddress(HexWord),
     InstructionExecuted {
         opcode: HexByte,
         instruction: Instruction,
-        new_pc: HexAddress,
-        registers: Registers,
+        new_pc: HexWord,
+        cpu: Cpu,
     },
+    InterruptRoutineStarted,
+    InterruptRoutineFinished(Interrupt),
     DebugTrigger,
 }
 
 impl std::fmt::Display for ExecutionEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReadFromNonMappedAddress(a) => write!(f, "ReadFromNonMappedAddress({})", a),
+            ExecutionEvent::ReadFromNonMappedAddress(a) => {
+                write!(f, "ReadFromNonMappedAddress({})", a)
+            }
             ExecutionEvent::WriteToNonMappedAddress(a) => {
                 write!(f, "WriteToNonMappedAddress({})", a)
             }
@@ -91,32 +118,28 @@ impl std::fmt::Display for ExecutionEvent {
                 opcode,
                 instruction,
                 new_pc,
-                registers,
+                cpu,
             } => {
                 writeln!(f, "InstructionExecuted")?;
                 writeln!(f, "Opcode: {}", opcode)?;
                 writeln!(f, "{}", instruction)?;
                 writeln!(f, "PC after instruction: {}", new_pc)?;
                 writeln!(f, "Registers:")?;
-                write!(f, "{}", registers)
+                write!(f, "{}", cpu)
             }
             ExecutionEvent::DebugTrigger => write!(f, "DebugTrigger"),
-            MemoryRead { address, value } => {
+            ExecutionEvent::MemoryRead { address, value } => {
                 write!(f, "MemoryRead{{address: {}, value: {}}}", address, value)
             }
-            MemoryWritten { address, value } => {
+            ExecutionEvent::MemoryWritten { address, value } => {
                 write!(f, "MemoryWritten{{address: {}, value: {}}}", address, value)
+            }
+            ExecutionEvent::InterruptRoutineStarted => write!(f, "InterruptRoutineStarted"),
+            ExecutionEvent::InterruptRoutineFinished(interrupt) => {
+                write!(f, "InterruptRoutineFinished({})", interrupt)
             }
         }
     }
-}
-
-trait Addressable {
-    #[must_use]
-    fn read(&self, address: u16) -> Option<u8>;
-
-    #[must_use]
-    fn write(&mut self, address: u16, value: u8) -> Option<()>;
 }
 
 pub struct GameboyContext {
@@ -125,6 +148,8 @@ pub struct GameboyContext {
     wram: WorkRam,
     serial: Serial,
     high_ram: HighRam,
+    interrupt_controller: InterruptController,
+    timer: Timer,
     events: Vec<ExecutionEvent>,
 }
 
@@ -136,16 +161,14 @@ impl GameboyContext {
             wram: WorkRam::default(),
             serial: Serial::default(),
             high_ram: HighRam::default(),
+            interrupt_controller: InterruptController::default(),
+            timer: Timer::default(),
             events: Vec::with_capacity(100),
         }
     }
 }
 
-impl ExecuteContext for GameboyContext {
-    fn tick(&mut self) {
-        self.clock_counter += 1;
-    }
-
+impl MemoryContext for GameboyContext {
     fn read(&mut self, addr: u16) -> u8 {
         let result = self
             .wram
@@ -153,12 +176,14 @@ impl ExecuteContext for GameboyContext {
             .or_else(|| self.serial.read(addr))
             .or_else(|| self.cartridge.read(addr))
             .or_else(|| self.high_ram.read(addr))
+            .or_else(|| self.interrupt_controller.read(addr))
+            .or_else(|| self.timer.read(addr))
             .unwrap_or_else(|| {
-                self.push_event(ReadFromNonMappedAddress(HexAddress(addr)));
+                self.push_event(ExecutionEvent::ReadFromNonMappedAddress(HexWord(addr)));
                 0xFF
             });
-        self.push_event(MemoryRead {
-            address: HexAddress(addr),
+        self.push_event(ExecutionEvent::MemoryRead {
+            address: HexWord(addr),
             value: HexByte(result),
         });
         result
@@ -170,11 +195,13 @@ impl ExecuteContext for GameboyContext {
             .or_else(|| self.serial.write(addr, value))
             .or_else(|| self.cartridge.write(addr, value))
             .or_else(|| self.high_ram.write(addr, value))
+            .or_else(|| self.interrupt_controller.write(addr, value))
+            .or_else(|| self.timer.write(addr, value))
             .unwrap_or_else(|| {
-                self.push_event(ReadFromNonMappedAddress(HexAddress(addr)));
+                self.push_event(ExecutionEvent::ReadFromNonMappedAddress(HexWord(addr)));
             });
-        self.push_event(MemoryWritten {
-            address: HexAddress(addr),
+        self.push_event(ExecutionEvent::MemoryWritten {
+            address: HexWord(addr),
             value: HexByte(value),
         })
     }
@@ -192,21 +219,64 @@ impl EventContext for GameboyContext {
     }
 }
 
+impl ClockContext for GameboyContext {
+    fn tick(&mut self) {
+        self.clock_counter += 1;
+        // Core clock, not CPU clock!
+        for _ in 0..4 {
+            self.timer.tick(&mut self.interrupt_controller);
+        }
+        self.interrupt_controller.tick();
+    }
+}
+
+impl InterruptContext for GameboyContext {
+    fn raise_interrupt(&mut self, interrupt: Interrupt) {
+        self.interrupt_controller.raise_interrupt(interrupt)
+    }
+}
+
+impl HandleInterruptContext for GameboyContext {
+    fn unraise_interrupt(&mut self, interrupt: Interrupt) {
+        self.interrupt_controller.unraise_interrupt(interrupt)
+    }
+
+    fn should_start_interrupt_routine(&self) -> bool {
+        self.interrupt_controller.should_start_interrupt_routine()
+    }
+
+    fn get_highest_priority_interrupt(&self) -> Option<Interrupt> {
+        self.interrupt_controller.get_highest_priority_interrupt()
+    }
+
+    fn schedule_ime_enable(&mut self) {
+        self.interrupt_controller.schedule_ime_enable()
+    }
+
+    fn enable_interrupts(&mut self) {
+        self.interrupt_controller.enable_interrupts()
+    }
+
+    fn disable_interrupts(&mut self) {
+        self.interrupt_controller.disable_interrupts()
+    }
+}
+
 pub struct GameBoy {
-    registers: Registers,
+    cpu: Cpu,
     context: GameboyContext,
-    next_opcode: u8,
+    next_operation: NextOperation,
 }
 
 impl GameBoy {
     pub fn new(cartridge: Box<dyn Cartridge>) -> Self {
-        let mut registers = Registers::after_boot_rom();
+        let mut cpu = Cpu::after_boot_rom();
         let mut context = GameboyContext::new(cartridge);
-        let initial_opcode = get_first_opcode(&mut registers, &mut context);
+        let initial_opcode = get_first_opcode(&mut cpu, &mut context);
         Self {
-            registers,
+            cpu,
             context,
-            next_opcode: initial_opcode,
+            next_operation: NextOperation::Opcode(initial_opcode),
         }
     }
 
@@ -218,10 +288,10 @@ impl GameBoy {
         mem::replace(&mut self.context.events, Vec::with_capacity(100))
     }
 
-    pub fn execute_instruction(&mut self) -> Result<(), ExecutionError> {
+    pub fn execute_operation(&mut self) -> Result<(), ExecutionError> {
         let new_opcode =
-            decode_execute_fetch(&mut self.registers, self.next_opcode, &mut self.context)?;
-        self.next_opcode = new_opcode;
+            execution::handle_next(&mut self.cpu, self.next_operation, &mut self.context)?;
+        self.next_operation = new_opcode;
         Ok(())
     }
 
@@ -239,8 +309,26 @@ impl GameBoy {
         for i in 0..64 * KIB {
             v.push(self.context.read(i as u16));
         }
-        fs::write(format!("{}/cpu.txt", base), format!("{}", self.registers)).unwrap();
+        fs::write(format!("{}/cpu.txt", base), format!("{}", self.cpu)).unwrap();
         fs::write(format!("{}/address_space.bin", base), v).unwrap();
+        fs::write(
+            format!("{}/timer.txt", base),
+            format!("{}", self.context.timer),
+        )
+        .unwrap();
+        fs::write(
+            format!("{}/interrupt_controller.txt", base),
+            format!("{}", self.context.interrupt_controller),
+        )
+        .unwrap();
         log::info!("Dump done!")
     }
+}
+
+pub trait Addressable {
+    #[must_use]
+    fn read(&self, address: u16) -> Option<u8>;
+
+    #[must_use]
+    fn write(&mut self, address: u16, value: u8) -> Option<()>;
 }
