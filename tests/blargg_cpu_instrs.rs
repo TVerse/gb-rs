@@ -34,7 +34,7 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
-const MAX_CYCLES: u64 = 100_000_000;
+const MAX_CYCLES: u64 = 30_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");

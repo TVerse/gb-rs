@@ -1,4 +1,3 @@
-use log::warn;
 use crate::core::cpu::{Cpu, Flags, Register16, Register8, State};
 use crate::core::execution::instructions::{Immediate16, Immediate8, JumpCondition};
 use crate::core::{
@@ -70,7 +69,24 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
                 NextOperation::StartInterruptRoutine => Ok(self.start_interrupt_routine()),
             }
         } else {
-            todo!()
+            Ok(self.halted(next_operation))
+        }
+    }
+
+    fn halted(&mut self, original_next_op: NextOperation) -> NextOperation {
+        self.context.push_event(ExecutionEvent::Halted);
+        self.context.tick();
+
+        if self.context.should_cancel_halt() {
+            self.cpu.set_state(State::Running);
+            if self.context.should_start_interrupt_routine() {
+                NextOperation::StartInterruptRoutine
+            } else {
+                debug_assert!(original_next_op != NextOperation::StartInterruptRoutine);
+                original_next_op
+            }
+        } else {
+            original_next_op
         }
     }
 

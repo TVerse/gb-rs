@@ -4,7 +4,7 @@ use simplelog::*;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::path::Path;
+use std::path::{Display, Path};
 
 use gb_rs::{
     parse_into_cartridge, ArithmeticOperation, CommonRegister, ExecutionEvent, GameBoy, Immediate8,
@@ -93,8 +93,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                             Immediate8(0x04),
                         ) =>
                     {
-                        log::info!("Stepping...");
-                        in_step = true;
+                        log::info!("Instruction breakpoint...");
+                        // in_step = true;
                     }
                     ExecutionEvent::DebugTrigger => {
                         log::info!("Debug trigger!");
@@ -103,8 +103,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     ExecutionEvent::MemoryWritten { address, value }
                         if address.0 == 0xFF07 && value.0 == 0x05 =>
                     {
-                        log::info!("Stepping...");
-                        in_step = true;
+                        log::info!("Write breakpoint...");
+                        // in_step = true;
+                    }
+                    ExecutionEvent::Halted => {
+                        log::info!("Halted...");
+                        // in_step = true;
                     }
                     _ => {}
                 }
@@ -137,6 +141,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     gb.dump("dump");
                 } else if read.contains('q') {
                     return Ok(());
+                } else if read.contains('s') {
+                    log::info!("{}", gb)
                 } else {
                     break;
                 }

@@ -58,6 +58,10 @@ impl HandleInterruptContext for InterruptTestContext {
         Some(Interrupt::Timer)
     }
 
+    fn should_cancel_halt(&self) -> bool {
+        false
+    }
+
     fn schedule_ime_enable(&mut self) {
         panic!()
     }

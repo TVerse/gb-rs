@@ -70,6 +70,10 @@ impl HandleInterruptContext for TestContext {
         None
     }
 
+    fn should_cancel_halt(&self) -> bool {
+        false
+    }
+
     fn schedule_ime_enable(&mut self) {}
 
     fn enable_interrupts(&mut self) {}
@@ -352,6 +356,7 @@ fn rst() {
     let mut cpu = Cpu::default();
     cpu.write_register8(Register8::A, 10);
     cpu.write_register8(Register8::B, 5);
+    cpu.write_register16(Register16::SP, 0x1002);
     let mut context = TestContext::default();
     context.mem[0] = 0xD7;
     context.mem[0x10] = 0xFF;
@@ -369,6 +374,9 @@ fn rst() {
         context.instruction.unwrap(),
         Instruction::Reset(ResetVector::Two)
     );
+    assert_eq!(cpu.read_register16(Register16::SP), 0x1000);
+    assert_eq!(context.mem[0x1000], 0x01, "0x1000");
+    assert_eq!(context.mem[0x1001], 0x00, "0x1001");
     assert_eq!(cpu.read_register16(Register16::PC), 0x11);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
     assert_eq!(context.cycles, 4);

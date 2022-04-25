@@ -75,6 +75,8 @@ pub trait HandleInterruptContext {
 
     fn get_highest_priority_interrupt(&self) -> Option<Interrupt>;
 
+    fn should_cancel_halt(&self) -> bool;
+
     fn schedule_ime_enable(&mut self);
 
     fn enable_interrupts(&mut self);
@@ -102,19 +104,20 @@ pub enum ExecutionEvent {
     },
     InterruptRoutineStarted,
     InterruptRoutineFinished(Interrupt),
+    Halted,
     DebugTrigger,
 }
 
 impl std::fmt::Display for ExecutionEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExecutionEvent::ReadFromNonMappedAddress(a) => {
+            Self::ReadFromNonMappedAddress(a) => {
                 write!(f, "ReadFromNonMappedAddress({})", a)
             }
-            ExecutionEvent::WriteToNonMappedAddress(a) => {
+            Self::WriteToNonMappedAddress(a) => {
                 write!(f, "WriteToNonMappedAddress({})", a)
             }
-            ExecutionEvent::InstructionExecuted {
+            Self::InstructionExecuted {
                 opcode,
                 instruction,
                 new_pc,
@@ -127,17 +130,18 @@ impl std::fmt::Display for ExecutionEvent {
                 writeln!(f, "Registers:")?;
                 write!(f, "{}", cpu)
             }
-            ExecutionEvent::DebugTrigger => write!(f, "DebugTrigger"),
-            ExecutionEvent::MemoryRead { address, value } => {
+            Self::DebugTrigger => write!(f, "DebugTrigger"),
+            Self::MemoryRead { address, value } => {
                 write!(f, "MemoryRead{{address: {}, value: {}}}", address, value)
             }
-            ExecutionEvent::MemoryWritten { address, value } => {
+            Self::MemoryWritten { address, value } => {
                 write!(f, "MemoryWritten{{address: {}, value: {}}}", address, value)
             }
-            ExecutionEvent::InterruptRoutineStarted => write!(f, "InterruptRoutineStarted"),
-            ExecutionEvent::InterruptRoutineFinished(interrupt) => {
+            Self::InterruptRoutineStarted => write!(f, "InterruptRoutineStarted"),
+            Self::InterruptRoutineFinished(interrupt) => {
                 write!(f, "InterruptRoutineFinished({})", interrupt)
             }
+            Self::Halted => write!(f, "Halted")
         }
     }
 }
@@ -249,6 +253,10 @@ impl HandleInterruptContext for GameboyContext {
         self.interrupt_controller.get_highest_priority_interrupt()
     }
 
+    fn should_cancel_halt(&self) -> bool {
+        self.interrupt_controller.should_cancel_halt()
+    }
+
     fn schedule_ime_enable(&mut self) {
         self.interrupt_controller.schedule_ime_enable()
     }
@@ -331,4 +339,15 @@ pub trait Addressable {
 
     #[must_use]
     fn write(&mut self, address: u16, value: u8) -> Option<()>;
+}
+
+impl std::fmt::Display for GameBoy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "CPU:")?;
+        writeln!(f, "{}", self.cpu)?;
+        writeln!(f, "Interrupt controller:")?;
+        writeln!(f, "{}", self.context.interrupt_controller)?;
+        writeln!(f, "Timer:")?;
+        writeln!(f, "{}", self.context.timer)
+    }
 }

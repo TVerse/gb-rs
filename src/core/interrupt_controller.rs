@@ -134,6 +134,10 @@ impl HandleInterruptContext for InterruptController {
         }
     }
 
+    fn should_cancel_halt(&self) -> bool {
+        self.interrupt_flag.intersects(self.interrupt_enable)
+    }
+
     fn schedule_ime_enable(&mut self) {
         self.ime_scheduled = true; // TODO think I might need a counter from 2
     }
