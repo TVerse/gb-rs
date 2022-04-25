@@ -1,10 +1,12 @@
+#![allow(unused_variables)]
+#![allow(unused_imports)]
 use clap::ArgEnum;
 use clap::Parser;
 use simplelog::*;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
-use std::path::{Display, Path};
+use std::path::Path;
 
 use gb_rs::{
     parse_into_cartridge, ArithmeticOperation, CommonRegister, ExecutionEvent, GameBoy, Immediate8,

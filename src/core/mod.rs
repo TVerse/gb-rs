@@ -141,7 +141,7 @@ impl std::fmt::Display for ExecutionEvent {
             Self::InterruptRoutineFinished(interrupt) => {
                 write!(f, "InterruptRoutineFinished({})", interrupt)
             }
-            Self::Halted => write!(f, "Halted")
+            Self::Halted => write!(f, "Halted"),
         }
     }
 }
