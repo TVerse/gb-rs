@@ -102,8 +102,10 @@ pub enum ExecutionEvent {
         new_pc: HexWord,
         cpu: Cpu,
     },
+    InterruptRaised(Interrupt),
     InterruptRoutineStarted,
     InterruptRoutineFinished(Interrupt),
+    SerialOut(HexByte),
     Halted,
     DebugTrigger,
 }
@@ -141,6 +143,10 @@ impl std::fmt::Display for ExecutionEvent {
             Self::InterruptRoutineFinished(interrupt) => {
                 write!(f, "InterruptRoutineFinished({})", interrupt)
             }
+            Self::InterruptRaised(interrupt) => {
+                write!(f, "InterruptRaised({})", interrupt)
+            }
+            Self::SerialOut(b) => write!(f, "SerialOut({})", b),
             Self::Halted => write!(f, "Halted"),
         }
     }
@@ -226,16 +232,19 @@ impl EventContext for GameboyContext {
 impl ClockContext for GameboyContext {
     fn tick(&mut self) {
         self.clock_counter += 1;
-        // Core clock, not CPU clock!
+        // Timer ticks on core clock, not CPU clock!
         for _ in 0..4 {
             self.timer.tick(&mut self.interrupt_controller);
         }
+        self.serial
+            .tick(&mut self.interrupt_controller, &mut self.events);
         self.interrupt_controller.tick();
     }
 }
 
 impl InterruptContext for GameboyContext {
     fn raise_interrupt(&mut self, interrupt: Interrupt) {
+        self.push_event(ExecutionEvent::InterruptRaised(interrupt));
         self.interrupt_controller.raise_interrupt(interrupt)
     }
 }
@@ -303,10 +312,6 @@ impl GameBoy {
         Ok(())
     }
 
-    pub fn get_serial_out(&mut self) -> Option<u8> {
-        self.context.serial.get_data()
-    }
-
     pub fn dump(&mut self, base: &str) {
         let p = Path::new(base);
         if !p.exists() {
@@ -348,6 +353,7 @@ impl std::fmt::Display for GameBoy {
         writeln!(f, "Interrupt controller:")?;
         writeln!(f, "{}", self.context.interrupt_controller)?;
         writeln!(f, "Timer:")?;
-        writeln!(f, "{}", self.context.timer)
+        writeln!(f, "{}", self.context.timer)?;
+        writeln!(f, "Clock cycles done: {}", self.context.clock_counter)
     }
 }
