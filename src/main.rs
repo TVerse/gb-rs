@@ -22,7 +22,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
     console_log_level: LogLevel,
 
-    #[clap(default_value_t = String::from("gb-test-roms/cpu_instrs/individual/02-interrupts.gb"))]
+    #[clap(default_value_t = String::from("gb-test-roms/instr_timing/instr_timing.gb"))]
     path: String,
 }
 
@@ -81,19 +81,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         res?;
         log::trace!("Events:");
-        for e in gb.take_events() {
+        for ref e in gb.take_events() {
+            if let ExecutionEvent::SerialOut(b) = e {
+                serial_out.push(b.0);
+                let serial = String::from_utf8_lossy(&serial_out);
+                log::info!("Got serial:\n{}", serial);
+                if serial.contains("Failed") {
+                    gb.dump("failure_dump");
+                    return Err("Failed".to_string().into());
+                }
+            }
             if !in_step {
-                match &e {
+                match e {
                     ExecutionEvent::InstructionExecuted {
                         new_pc,
                         cpu,
                         instruction,
                         ..
                     } if *instruction
-                        == Instruction::AluImmediate(
-                            ArithmeticOperation::And,
-                            Immediate8(0x04),
-                        ) =>
+                        == Instruction::AluImmediate(ArithmeticOperation::Sub, Immediate8(10)) =>
                     {
                         log::info!("Instruction breakpoint...");
                         // in_step = true;
@@ -103,13 +109,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                         // in_step = true;
                     }
                     ExecutionEvent::MemoryWritten { address, value }
-                        if address.0 == 0xFF07 && value.0 == 0x05 =>
+                        if address.0 == 0xFF01 || address.0 == 0xFF02 =>
                     {
                         log::info!("Write breakpoint...");
                         // in_step = true;
                     }
                     ExecutionEvent::Halted => {
                         log::info!("Halted...");
+                        // in_step = true;
+                    }
+                    ExecutionEvent::SerialOut(_) => {
+                        log::info!("Serial...");
                         // in_step = true;
                     }
                     _ => {}
@@ -120,16 +130,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 log::info!("{}", &e)
             } else {
                 log::trace!("{}", &e);
-            }
-        }
-        if let Some(serial) = gb.get_serial_out() {
-            // in_step = true;
-            serial_out.push(serial);
-            let serial = String::from_utf8_lossy(&serial_out);
-            log::info!("Got serial:\n{}", serial);
-            if serial.contains("Failed") {
-                gb.dump("failure_dump");
-                return Err("Failed".to_string().into());
             }
         }
         if in_step {

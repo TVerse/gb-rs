@@ -1,4 +1,4 @@
-use gb_rs::{parse_into_cartridge, GameBoy};
+use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy};
 use paste::paste;
 use std::fs;
 use std::path::Path;
@@ -7,7 +7,7 @@ macro_rules! blargg_test {
     ($n:expr) => {
         paste! {
             #[test]
-            fn [<blarg_cpu_instr_ $n>]() {
+            fn [<blargg_cpu_instr_ $n>]() {
                 let _ = env_logger::builder()
                     // Include all events in tests
                     .filter_level(log::LevelFilter::max())
@@ -34,7 +34,14 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
-const MAX_CYCLES: u64 = 30_000_000;
+#[test]
+fn blargg_cpu_instr_all() {
+    let rom = fs::read("gb-test-roms/cpu_instrs/cpu_instrs.gb").unwrap();
+
+    execute_test(rom);
+}
+
+const MAX_CYCLES: u64 = 75_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
@@ -65,9 +72,13 @@ fn execute_test(rom: Vec<u8>) {
             )
         }
         gb.execute_operation().unwrap();
-        if let Some(serial) = gb.get_serial_out() {
-            serial_out.push(serial);
+        for e in gb.take_events() {
+            match e {
+                ExecutionEvent::SerialOut(b) => serial_out.push(b.0),
+                _ => {}
+            }
         }
+
         if serial_out.ends_with("Failed".as_bytes()) {
             panic!("{}", String::from_utf8_lossy(&serial_out))
         }

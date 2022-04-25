@@ -49,7 +49,7 @@ pub struct Timer {
 impl Timer {
     const TIMER_ENABLE_BIT: u8 = 0b00000100;
 
-    pub fn tick<C: InterruptContext>(&mut self, context: &mut C) {
+    pub fn tick<I: InterruptContext>(&mut self, context: &mut I) {
         self.divider = self.divider.wrapping_add(1);
         if self.timer_enabled {
             let mask = match self.timer_control {
