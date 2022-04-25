@@ -1,4 +1,5 @@
-use crate::{Cartridge, GameBoyError, RawResult, KIB};
+use crate::core::cartridge::Cartridge;
+use crate::core::KIB;
 
 #[derive(Debug, Clone)]
 pub struct Mbc1Cartridge {
@@ -16,28 +17,22 @@ impl Mbc1Cartridge {
 }
 
 impl Cartridge for Mbc1Cartridge {
-    fn read_byte(&self, address: u16) -> RawResult<u8> {
+    fn read(&self, address: u16) -> Option<u8> {
         match address {
-            0x0000..=0x3FFF => Ok(self.rom[0][address as usize]),
-            0x4000..=0x7FFF => Ok(self.rom[self.rom_bank as usize][(address as usize) - 0x4000]),
-            _ => Err(GameBoyError::NonMappedAddress {
-                address,
-                description: "RomOnlyCartridge ROM read",
-            }),
+            0x0000..=0x3FFF => Some(self.rom[0][address as usize]),
+            0x4000..=0x7FFF => Some(self.rom[self.rom_bank as usize][(address as usize) - 0x4000]),
+            _ => None,
         }
     }
 
-    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()> {
+    fn write(&mut self, address: u16, byte: u8) -> Option<()> {
         match address {
             0x2000..=0x3FFF => {
                 log::trace!("Swapping ROM bank from {} to {}", self.rom_bank, byte);
                 self.rom_bank = byte;
-                Ok(())
+                Some(())
             }
-            _ => Err(GameBoyError::NonMappedAddress {
-                address,
-                description: "RomOnlyCartridge write",
-            }),
+            _ => None,
         }
     }
 }

@@ -34,7 +34,7 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
-const MAX_STEPS: usize = 10_000_000;
+const MAX_CYCLES: u64 = 30_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
@@ -54,10 +54,9 @@ fn execute_test(rom: Vec<u8>) {
     let mut gb = GameBoy::new(cartridge);
 
     let mut serial_out: Vec<_> = Vec::with_capacity(256);
-    let mut step_counter = 0;
 
     loop {
-        if step_counter > MAX_STEPS {
+        if gb.get_elapsed_cycles() > MAX_CYCLES {
             let take = serial_out.len().min(100);
             panic!(
                 "Test went over step limit! Got partial serial ({} characters): {}",
@@ -65,9 +64,8 @@ fn execute_test(rom: Vec<u8>) {
                 String::from_utf8_lossy(&serial_out[0..take])
             )
         }
-        step_counter += 1;
-        let step_result = gb.step().map_err(|e| e.to_string()).unwrap();
-        if let Some(serial) = step_result.serial_byte {
+        gb.execute_operation().unwrap();
+        if let Some(serial) = gb.get_serial_out() {
             serial_out.push(serial);
         }
         if serial_out.ends_with("Failed".as_bytes()) {

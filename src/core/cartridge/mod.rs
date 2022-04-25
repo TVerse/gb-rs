@@ -1,12 +1,16 @@
 mod mbc1;
 mod rom_only;
 
-use std::fmt::Debug;
-use crate::components::cartridge::mbc1::Mbc1Cartridge;
-use crate::components::cartridge::rom_only::RomOnlyCartridge;
-use crate::RawResult;
+use crate::core::cartridge::mbc1::Mbc1Cartridge;
+use crate::core::cartridge::rom_only::RomOnlyCartridge;
 
-// TODO errors
+use std::fmt::Debug;
+
+pub trait Cartridge: Debug {
+    fn read(&self, address: u16) -> Option<u8>;
+    fn write(&mut self, address: u16, byte: u8) -> Option<()>;
+}
+
 pub fn parse_into_cartridge(rom: Vec<u8>) -> Box<dyn Cartridge> {
     let header = RawCartridgeHeader {
         nintendo_logo: rom[0x0104..=0x0133].try_into().unwrap(),
@@ -50,9 +54,4 @@ struct RawCartridgeHeader {
     mask_rom_version: u8,
     header_checksum: u8,
     global_checksum: [u8; 2],
-}
-
-pub trait Cartridge: Debug {
-    fn read_byte(&self, address: u16) -> RawResult<u8>;
-    fn write_byte(&mut self, address: u16, byte: u8) -> RawResult<()>;
 }
