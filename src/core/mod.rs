@@ -3,6 +3,7 @@ use crate::core::execution::{get_first_opcode, ExecutionError, NextOperation};
 use crate::core::interrupt_controller::{Interrupt, InterruptController};
 use crate::core::ppu::{Buffer, Mode, Ppu};
 use crate::core::timer::Timer;
+use crate::{Color, ColorId};
 use cpu::Cpu;
 use execution::instructions::Instruction;
 use high_ram::HighRam;
@@ -112,6 +113,7 @@ pub enum ExecutionEvent {
         x: u16,
         y: u8,
     },
+    PpuPixelPushed(u8, u8, ColorId),
     Halted,
     DebugTrigger,
 }
@@ -157,6 +159,7 @@ impl std::fmt::Display for ExecutionEvent {
             Self::PpuModeSwitch { mode, x, y } => {
                 write!(f, "PpuModeSwitch{{mode: {:?}, x: {}, y: {}}}", mode, x, y)
             }
+            Self::PpuPixelPushed(x, y, c) => write!(f, "PpuPixelPushed({}, {}, {:?})", x, y, c),
             Self::Halted => write!(f, "Halted"),
         }
     }
@@ -369,6 +372,8 @@ impl std::fmt::Display for GameBoy {
         writeln!(f, "{}", self.context.interrupt_controller)?;
         writeln!(f, "Timer:")?;
         writeln!(f, "{}", self.context.timer)?;
+        writeln!(f, "Ppu:")?;
+        writeln!(f, "{}", self.context.ppu)?;
         writeln!(f, "Clock cycles done: {}", self.context.clock_counter)
     }
 }

@@ -614,13 +614,12 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn ld_irp_a(&mut self, rp: Register16) -> Instruction {
         let res = self.cpu.read_register8(Register8::A);
-        self.context.write(self.cpu.read_register16(rp), res);
+        self.write_byte_to(self.cpu.read_register16(rp), res);
         Instruction::LoadIndirectRegisterA(rp)
     }
     fn ld_hlp_a(&mut self) -> Instruction {
         let res = self.cpu.read_register8(Register8::A);
-        self.context
-            .write(self.cpu.read_register16(Register16::HL), res);
+        self.write_byte_to(self.cpu.read_register16(Register16::HL), res);
         self.cpu.write_register16(
             Register16::HL,
             self.cpu.read_register16(Register16::HL).wrapping_add(1),
@@ -629,8 +628,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn ld_hlm_a(&mut self) -> Instruction {
         let res = self.cpu.read_register8(Register8::A);
-        self.context
-            .write(self.cpu.read_register16(Register16::HL), res);
+        self.write_byte_to(self.cpu.read_register16(Register16::HL), res);
         self.cpu.write_register16(
             Register16::HL,
             self.cpu.read_register16(Register16::HL).wrapping_sub(1),
@@ -638,7 +636,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
         Instruction::LoadDecrementHLIndirectA
     }
     fn ld_a_irp(&mut self, rp: Register16) -> Instruction {
-        let res = self.context.read(self.cpu.read_register16(rp));
+        let res = self.read_byte_at(self.cpu.read_register16(rp));
         self.cpu.write_register8(Register8::A, res);
         Instruction::LoadAIndirectRegister(rp)
     }

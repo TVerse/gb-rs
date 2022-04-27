@@ -10,5 +10,6 @@ pub use self::core::execution::instructions::{
 pub use crate::core::cartridge::parse_into_cartridge;
 pub use crate::core::ppu::Buffer;
 pub use crate::core::ppu::Color;
+pub use crate::core::ppu::ColorId;
 pub use crate::core::ExecutionEvent;
 pub use crate::core::GameBoy;

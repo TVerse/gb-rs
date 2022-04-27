@@ -115,12 +115,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     ExecutionEvent::DebugTrigger => {
                         log::info!("Debug trigger!");
-                        in_step = true;
+                        // in_step = true;
+                        gb.dump("dump");
                         return Ok(());
                     }
-                    ExecutionEvent::MemoryWritten { address, value }
-                        if address.0 == 0xFF41 =>
-                    {
+                    ExecutionEvent::MemoryWritten { address, value } if address.0 == 0xFF41 => {
                         // log::info!("Write breakpoint...");
                         // in_step = true;
                     }
@@ -168,11 +167,11 @@ fn make_image(buf: &Buffer) {
     let bytes: Vec<u8> = colors
         .iter()
         .flat_map(|c| match c {
-            Color::White => [0xFF, 0xFF, 0xFF],
-            Color::LightGrey => [0xAA, 0xAA, 0xAA],
-            Color::DarkGrey => [0x55, 0x55, 0x55],
-            Color::Black => [0x00, 0x00, 0x00],
+            Color::White => [0xFF],
+            Color::LightGrey => [0xAA],
+            Color::DarkGrey => [0x55],
+            Color::Black => [0x00],
         })
         .collect();
-    image::save_buffer("image.png", &bytes, 160, 144, image::ColorType::Rgb8).unwrap()
+    image::save_buffer("image.png", &bytes, 160, 144, image::ColorType::L8).unwrap()
 }

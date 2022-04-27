@@ -29,7 +29,7 @@ bitflags! {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum ColorId {
+pub enum ColorId {
     Zero,
     One,
     Two,
@@ -37,9 +37,9 @@ enum ColorId {
 }
 
 impl ColorId {
-    fn from_bits(bit_1: bool, bit_2: bool) -> Self {
+    fn from_bits(lsb: bool, msb: bool) -> Self {
         // LSb first
-        match (bit_1, bit_2) {
+        match (lsb, msb) {
             (false, false) => Self::Zero,
             (true, false) => Self::One,
             (false, true) => Self::Two,
@@ -86,13 +86,12 @@ struct TileData {
 }
 
 impl TileData {
-    fn index(&self, index: u8) -> ColorId {
-        let (row, bit) = (index / 8, index % 8);
-        let mask = 1 << bit;
-        let bit_1 = self.data[row as usize].0 & mask > 0;
-        let bit_2 = self.data[row as usize].1 & mask > 0;
+    fn index(&self, x: u8, y: u8) -> ColorId {
+        let mask = 1 << x;
+        let lsb = self.data[y as usize].0 & mask > 0;
+        let msb = self.data[y as usize].1 & mask > 0;
 
-        ColorId::from_bits(bit_1, bit_2)
+        ColorId::from_bits(lsb, msb)
     }
 }
 
@@ -158,6 +157,9 @@ impl Ppu {
 
     // TODO how do I sync with vblank if ppu is off? Cycle counting instead with initial known sync?
     pub fn tick<I: InterruptContext, E: EventContext>(&mut self, ctx: &mut I, event_ctx: &mut E) {
+        if !self.lcdc.contains(LCDC::LCD_PPU_ENABLE) {
+            return
+        }
         match self.mode {
             Mode::HBlank0 => {
                 self.x_clock += 1;
@@ -217,9 +219,16 @@ impl Ppu {
             }
             Mode::LCDOn3 => {
                 // Pretend 1 cycle == 1 pixel
-                let color_id = self.get_current_pixel_color_id();
-                self.frame_buffer[self.ly as usize][self.x_pixel as usize] =
-                    Color::from_color_id(color_id, self.bg_palette);
+                let x = self.x_pixel.wrapping_add(self.scx);
+                let y = self.ly.wrapping_add(self.scy);
+                let color_id = self.get_current_pixel_color_id(x, y);
+                let color = Color::from_color_id(color_id, self.bg_palette);
+                self.frame_buffer[self.ly as usize][self.x_pixel as usize] = color;
+                event_ctx.push_event(ExecutionEvent::PpuPixelPushed(
+                    self.x_pixel,
+                    self.ly,
+                    color_id,
+                ));
                 self.x_clock += 1;
                 self.x_pixel += 1;
                 if self.x_pixel == 160 {
@@ -261,12 +270,11 @@ impl Ppu {
     In-tile coordinate: p_x = (x_pixel + scx) % 8, p_y = (ly + scy) % 8
     In-tile index: p_x + 8 * p_y
      */
-    fn get_current_pixel_color_id(&self) -> ColorId {
-        let t_x = (self.x_pixel.wrapping_add(self.scx)) / 8;
-        let t_y = (self.ly.wrapping_add(self.scy)) / 8;
-        debug_assert!(t_x < 32);
-        debug_assert!(t_y < 32);
-        let tile_map_idx = (t_x as usize) + (32 * (t_y as usize));
+    fn get_current_pixel_color_id(&self, target_x: u8, target_y: u8) -> ColorId {
+        let tile_x = target_x / 8;
+        let tile_y = target_y / 8;
+        let tile_map_idx = (tile_x as usize) + (32 * (tile_y as usize));
+
         let tile_idx = if self.lcdc.contains(LCDC::BG_TILE_MAP_AREA) {
             self.tile_map_2[tile_map_idx]
         } else {
@@ -274,10 +282,10 @@ impl Ppu {
         };
         let tile_data = self.read_tile_data_bg_win(tile_idx);
 
-        let p_x = (self.x_pixel.wrapping_add(self.scx)) % 8;
-        let p_y = (self.ly.wrapping_add(self.scy)) % 8;
+        let pixel_x = target_x % 8;
+        let pixel_y = target_y % 8;
 
-        tile_data.index(p_x + 8 * p_y)
+        tile_data.index(pixel_x, pixel_y)
     }
 
     fn read_vram(&self, address: u16) -> u8 {
@@ -328,7 +336,7 @@ impl Ppu {
     }
 
     fn read_tile_data_at_offset(data: &[u8; 0x800], offset: usize) -> TileData {
-        let tile_data = &data[offset..(offset + 16)];
+        let tile_data = &data[(offset * 16)..((offset + 1) * 16)];
         let tile_data: [u8; 16] = tile_data.try_into().expect("Incorrect tile_data length");
         let tile_data: [(u8, u8); 8] = tile_data
             .chunks(2)
@@ -421,6 +429,14 @@ impl Default for Ppu {
             lyc_is_ly: false,
             previous_stat_interrupt: false,
         }
+    }
+}
+
+impl std::fmt::Display for Ppu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Mode: {:?}", self.mode)?;
+        writeln!(f, "LCDC: {:?}", self.lcdc)?;
+        writeln!(f, "STAT: {:?}", self.stat)
     }
 }
 
