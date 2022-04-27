@@ -87,7 +87,7 @@ struct TileData {
 
 impl TileData {
     fn index(&self, x: u8, y: u8) -> ColorId {
-        let mask = 1 << x;
+        let mask = 0x80 >> x;
         let lsb = self.data[y as usize].0 & mask > 0;
         let msb = self.data[y as usize].1 & mask > 0;
 
