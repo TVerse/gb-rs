@@ -110,25 +110,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                         instruction,
                         ..
                     } if *instruction == Instruction::Halt => {
-                        gb.dump("dump");
-                        return Ok(());
+                        // gb.dump("dump");
+                        // in_step = true;
                     }
                     ExecutionEvent::DebugTrigger => {
                         log::info!("Debug trigger!");
-                        // in_step = true;
+                        in_step = true;
+                        return Ok(());
                     }
                     ExecutionEvent::MemoryWritten { address, value }
-                        if address.0 == 0xFF01 || address.0 == 0xFF02 =>
+                        if address.0 == 0xFF41 =>
                     {
-                        log::info!("Write breakpoint...");
-                        // in_step = true;
-                    }
-                    ExecutionEvent::Halted => {
-                        log::info!("Halted...");
+                        // log::info!("Write breakpoint...");
                         // in_step = true;
                     }
                     ExecutionEvent::SerialOut(_) => {
-                        log::info!("Serial...");
+                        // log::info!("Serial...");
                         // in_step = true;
                     }
                     _ => {}

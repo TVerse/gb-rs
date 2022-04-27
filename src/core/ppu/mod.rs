@@ -134,6 +134,7 @@ pub struct Ppu {
     lyc: u8,
     stat: Stat,
     lyc_is_ly: bool,
+    previous_stat_interrupt: bool,
 }
 
 impl Ppu {
@@ -163,7 +164,6 @@ impl Ppu {
                 if self.x_clock == 456 {
                     self.x_clock = 0;
                     self.ly += 1;
-                    self.lyc_is_ly = self.ly == self.lyc;
                     if self.ly == 144 {
                         self.mode = Mode::VBlank1;
                         ctx.raise_interrupt(Interrupt::VBlank);
@@ -232,6 +232,24 @@ impl Ppu {
                 }
             }
         }
+        self.lyc_is_ly = self.ly == self.lyc;
+        let mut stat = false;
+        if self.stat.contains(Stat::LYC_IS_LY_INTERRUPT) {
+            stat |= self.lyc_is_ly;
+        }
+        if self.stat.contains(Stat::VBLANK_INTERRUPT) {
+            stat |= self.mode == Mode::VBlank1;
+        }
+        if self.stat.contains(Stat::OAM_INTERRUPT) {
+            stat |= self.mode == Mode::OAMSearch2;
+        }
+        if self.stat.contains(Stat::HBLANK_INTERRUPT) {
+            stat |= self.mode == Mode::HBlank0;
+        }
+        if !self.previous_stat_interrupt && stat {
+            ctx.raise_interrupt(Interrupt::LcdStat)
+        }
+        self.previous_stat_interrupt = stat;
     }
 
     /*
@@ -370,7 +388,6 @@ impl Addressable for Ppu {
             }
             0xFF45 => {
                 self.lyc = value;
-                self.lyc_is_ly = self.lyc == self.ly;
                 Some(())
             }
             0xFF47 => {
@@ -402,6 +419,7 @@ impl Default for Ppu {
             lyc: 0,
             stat: Stat::empty(),
             lyc_is_ly: false,
+            previous_stat_interrupt: false,
         }
     }
 }
