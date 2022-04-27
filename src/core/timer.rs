@@ -158,11 +158,13 @@ mod tests {
     #[test]
     fn trigger_interrupt() {
         let mut context = TestInterruptController::default();
-        let mut timer = Timer::default();
-        timer.timer_enabled = true;
-        timer.divider = 0;
-        timer.timer_counter = 0xFF;
-        timer.timer_control = TimerControl::Div16;
+        let mut timer = Timer {
+            timer_enabled: true,
+            divider: 0,
+            timer_counter: 0xFF,
+            timer_control: TimerControl::Div16,
+            ..Timer::default()
+        };
         for _ in 0..16 {
             timer.tick(&mut context);
         }
@@ -172,11 +174,13 @@ mod tests {
     #[test]
     fn trigger_interrupt_twice() {
         let mut context = TestInterruptController::default();
-        let mut timer = Timer::default();
-        timer.timer_enabled = true;
-        timer.divider = 0;
-        timer.timer_counter = 0x00;
-        timer.timer_control = TimerControl::Div16;
+        let mut timer = Timer {
+            timer_enabled: true,
+            divider: 0,
+            timer_counter: 0x00,
+            timer_control: TimerControl::Div16,
+            ..Timer::default()
+        };
         for _ in 0..(16 * 256) {
             timer.tick(&mut context);
         }
@@ -191,11 +195,13 @@ mod tests {
     #[test]
     fn trigger_interrupt_1024() {
         let mut context = TestInterruptController::default();
-        let mut timer = Timer::default();
-        timer.timer_enabled = true;
-        timer.divider = 0;
-        timer.timer_counter = 0x00;
-        timer.timer_control = TimerControl::Div1024;
+        let mut timer = Timer {
+            timer_enabled: true,
+            divider: 0,
+            timer_counter: 0x00,
+            timer_control: TimerControl::Div1024,
+            ..Timer::default()
+        };
         for _ in 0..(1024 * 256 - 1) {
             timer.tick(&mut context);
         }

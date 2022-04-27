@@ -24,7 +24,7 @@ pub struct Serial {
 impl Serial {
     pub fn tick<C: InterruptContext, E: EventContext>(&mut self, ctx: &mut C, e: &mut E) {
         self.clock_counter += 1;
-        if self.clock_counter == 128 {
+        if self.clock_counter == 512 {
             self.clock_counter = 0;
         }
 

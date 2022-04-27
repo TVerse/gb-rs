@@ -71,11 +71,11 @@ fn execute_test(rom: Vec<u8>) {
                 String::from_utf8_lossy(&serial_out[0..take])
             )
         }
-        gb.execute_operation().unwrap();
-        for e in gb.take_events() {
-            match e {
-                ExecutionEvent::SerialOut(b) => serial_out.push(b.0),
-                _ => {}
+        let (events, res) = gb.execute_operation();
+        res.unwrap();
+        for e in events {
+            if let ExecutionEvent::SerialOut(b) = e {
+                serial_out.push(b.0)
             }
         }
 

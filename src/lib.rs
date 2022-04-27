@@ -8,5 +8,7 @@ pub use self::core::execution::instructions::{
     RotationShiftOperation,
 };
 pub use crate::core::cartridge::parse_into_cartridge;
+pub use crate::core::ppu::Buffer;
+pub use crate::core::ppu::Color;
 pub use crate::core::ExecutionEvent;
 pub use crate::core::GameBoy;
