@@ -158,7 +158,7 @@ impl Ppu {
     // TODO how do I sync with vblank if ppu is off? Cycle counting instead with initial known sync?
     pub fn tick<I: InterruptContext, E: EventContext>(&mut self, ctx: &mut I, event_ctx: &mut E) {
         if !self.lcdc.contains(LCDC::LCD_PPU_ENABLE) {
-            return
+            return;
         }
         match self.mode {
             Mode::HBlank0 => {

@@ -3,7 +3,7 @@ use crate::core::execution::{get_first_opcode, ExecutionError, NextOperation};
 use crate::core::interrupt_controller::{Interrupt, InterruptController};
 use crate::core::ppu::{Buffer, Mode, Ppu};
 use crate::core::timer::Timer;
-use crate::{Color, ColorId};
+use crate::ColorId;
 use cpu::Cpu;
 use execution::instructions::Instruction;
 use high_ram::HighRam;
