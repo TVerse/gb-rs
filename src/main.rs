@@ -1,16 +1,21 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
+#![feature(slice_flatten)]
+
 use clap::ArgEnum;
 use clap::Parser;
+use image::{ImageBuffer, RgbImage};
 use simplelog::*;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 
+use gb_rs::ExecutionEvent::SerialOut;
 use gb_rs::{
-    parse_into_cartridge, ArithmeticOperation, CommonRegister, ExecutionEvent, GameBoy, Immediate8,
-    Instruction, Register16, Register8, RotationShiftOperation,
+    parse_into_cartridge, ArithmeticOperation, Buffer, Color, CommonRegister, ExecutionEvent,
+    GameBoy, Immediate8, Instruction, Register16, Register8, RotationShiftOperation,
 };
 
 #[derive(Parser, Debug)]
@@ -22,7 +27,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
     console_log_level: LogLevel,
 
-    #[clap(default_value_t = String::from("gb-test-roms/instr_timing/instr_timing.gb"))]
+    #[clap(default_value_t = String::from("test_roms/dmg-acid2.gb"))]
     path: String,
 }
 
@@ -75,13 +80,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut in_step = false;
 
     loop {
-        let res = gb.execute_operation();
+        let (events, res) = gb.execute_operation();
         if res.is_err() {
             gb.dump("crashdump");
         }
         res?;
         log::trace!("Events:");
-        for ref e in gb.take_events() {
+        for ref e in events {
             if let ExecutionEvent::SerialOut(b) = e {
                 serial_out.push(b.0);
                 let serial = String::from_utf8_lossy(&serial_out);
@@ -89,8 +94,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if serial.contains("Failed") {
                     gb.dump("failure_dump");
                     return Err("Failed".to_string().into());
+                } else if serial.contains("Passed all tests\n") {
+                    return Ok(());
                 }
             }
+            if let ExecutionEvent::FrameReady(frame) = e {
+                // log::info!("Writing frame");
+                make_image(frame);
+            };
             if !in_step {
                 match e {
                     ExecutionEvent::InstructionExecuted {
@@ -98,28 +109,22 @@ fn main() -> Result<(), Box<dyn Error>> {
                         cpu,
                         instruction,
                         ..
-                    } if *instruction
-                        == Instruction::AluImmediate(ArithmeticOperation::Sub, Immediate8(10)) =>
-                    {
-                        log::info!("Instruction breakpoint...");
+                    } if *instruction == Instruction::Halt => {
+                        // gb.dump("dump");
                         // in_step = true;
                     }
                     ExecutionEvent::DebugTrigger => {
                         log::info!("Debug trigger!");
                         // in_step = true;
+                        gb.dump("dump");
+                        return Ok(());
                     }
-                    ExecutionEvent::MemoryWritten { address, value }
-                        if address.0 == 0xFF01 || address.0 == 0xFF02 =>
-                    {
-                        log::info!("Write breakpoint...");
-                        // in_step = true;
-                    }
-                    ExecutionEvent::Halted => {
-                        log::info!("Halted...");
+                    ExecutionEvent::MemoryWritten { address, value } if address.0 == 0xFF41 => {
+                        // log::info!("Write breakpoint...");
                         // in_step = true;
                     }
                     ExecutionEvent::SerialOut(_) => {
-                        log::info!("Serial...");
+                        // log::info!("Serial...");
                         // in_step = true;
                     }
                     _ => {}
@@ -155,4 +160,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn load_rom<P: AsRef<Path>>(path: P) -> Vec<u8> {
     fs::read(path).unwrap()
+}
+
+fn make_image(buf: &Buffer) {
+    let colors = buf.flatten();
+    let bytes: Vec<u8> = colors
+        .iter()
+        .flat_map(|c| match c {
+            Color::White => [0xFF],
+            Color::LightGrey => [0xAA],
+            Color::DarkGrey => [0x55],
+            Color::Black => [0x00],
+        })
+        .collect();
+    image::save_buffer("image.png", &bytes, 160, 144, image::ColorType::L8).unwrap()
 }

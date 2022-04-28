@@ -1,7 +1,9 @@
 use crate::core::cartridge::Cartridge;
 use crate::core::execution::{get_first_opcode, ExecutionError, NextOperation};
 use crate::core::interrupt_controller::{Interrupt, InterruptController};
+use crate::core::ppu::{Buffer, Mode, Ppu};
 use crate::core::timer::Timer;
+use crate::ColorId;
 use cpu::Cpu;
 use execution::instructions::Instruction;
 use high_ram::HighRam;
@@ -15,9 +17,8 @@ pub mod cpu;
 pub mod execution;
 pub mod high_ram;
 mod interrupt_controller;
+pub mod ppu;
 pub mod serial;
-#[cfg(test)]
-mod testsupport;
 mod timer;
 pub mod wram;
 
@@ -106,6 +107,13 @@ pub enum ExecutionEvent {
     InterruptRoutineStarted,
     InterruptRoutineFinished(Interrupt),
     SerialOut(HexByte),
+    FrameReady(Box<Buffer>),
+    PpuModeSwitch {
+        mode: Mode,
+        x: u16,
+        y: u8,
+    },
+    PpuPixelPushed(u8, u8, ColorId),
     Halted,
     DebugTrigger,
 }
@@ -147,6 +155,11 @@ impl std::fmt::Display for ExecutionEvent {
                 write!(f, "InterruptRaised({})", interrupt)
             }
             Self::SerialOut(b) => write!(f, "SerialOut({})", b),
+            Self::FrameReady(_) => write!(f, "FrameReady"),
+            Self::PpuModeSwitch { mode, x, y } => {
+                write!(f, "PpuModeSwitch{{mode: {:?}, x: {}, y: {}}}", mode, x, y)
+            }
+            Self::PpuPixelPushed(x, y, c) => write!(f, "PpuPixelPushed({}, {}, {:?})", x, y, c),
             Self::Halted => write!(f, "Halted"),
         }
     }
@@ -160,6 +173,7 @@ pub struct GameboyContext {
     high_ram: HighRam,
     interrupt_controller: InterruptController,
     timer: Timer,
+    ppu: Ppu,
     events: Vec<ExecutionEvent>,
 }
 
@@ -173,6 +187,7 @@ impl GameboyContext {
             high_ram: HighRam::default(),
             interrupt_controller: InterruptController::default(),
             timer: Timer::default(),
+            ppu: Ppu::default(),
             events: Vec::with_capacity(100),
         }
     }
@@ -188,6 +203,7 @@ impl MemoryContext for GameboyContext {
             .or_else(|| self.high_ram.read(addr))
             .or_else(|| self.interrupt_controller.read(addr))
             .or_else(|| self.timer.read(addr))
+            .or_else(|| self.ppu.read(addr))
             .unwrap_or_else(|| {
                 self.push_event(ExecutionEvent::ReadFromNonMappedAddress(HexWord(addr)));
                 0xFF
@@ -207,6 +223,7 @@ impl MemoryContext for GameboyContext {
             .or_else(|| self.high_ram.write(addr, value))
             .or_else(|| self.interrupt_controller.write(addr, value))
             .or_else(|| self.timer.write(addr, value))
+            .or_else(|| self.ppu.write(addr, value))
             .unwrap_or_else(|| {
                 self.push_event(ExecutionEvent::ReadFromNonMappedAddress(HexWord(addr)));
             });
@@ -231,14 +248,16 @@ impl EventContext for GameboyContext {
 
 impl ClockContext for GameboyContext {
     fn tick(&mut self) {
-        self.clock_counter += 1;
         // Timer ticks on core clock, not CPU clock!
         for _ in 0..4 {
             self.timer.tick(&mut self.interrupt_controller);
+            self.serial
+                .tick(&mut self.interrupt_controller, &mut self.events);
+            self.ppu
+                .tick(&mut self.interrupt_controller, &mut self.events);
+            self.interrupt_controller.tick();
         }
-        self.serial
-            .tick(&mut self.interrupt_controller, &mut self.events);
-        self.interrupt_controller.tick();
+        self.clock_counter += 1;
     }
 }
 
@@ -301,15 +320,14 @@ impl GameBoy {
         self.context.clock_counter
     }
 
-    pub fn take_events(&mut self) -> Vec<ExecutionEvent> {
+    fn take_events(&mut self) -> Vec<ExecutionEvent> {
         mem::replace(&mut self.context.events, Vec::with_capacity(100))
     }
 
-    pub fn execute_operation(&mut self) -> Result<(), ExecutionError> {
-        let new_opcode =
-            execution::handle_next(&mut self.cpu, self.next_operation, &mut self.context)?;
-        self.next_operation = new_opcode;
-        Ok(())
+    pub fn execute_operation(&mut self) -> (Vec<ExecutionEvent>, Result<(), ExecutionError>) {
+        let res = execution::handle_next(&mut self.cpu, self.next_operation, &mut self.context)
+            .map(|no| self.next_operation = no);
+        (self.take_events(), res)
     }
 
     pub fn dump(&mut self, base: &str) {
@@ -354,6 +372,8 @@ impl std::fmt::Display for GameBoy {
         writeln!(f, "{}", self.context.interrupt_controller)?;
         writeln!(f, "Timer:")?;
         writeln!(f, "{}", self.context.timer)?;
+        writeln!(f, "Ppu:")?;
+        writeln!(f, "{}", self.context.ppu)?;
         writeln!(f, "Clock cycles done: {}", self.context.clock_counter)
     }
 }
