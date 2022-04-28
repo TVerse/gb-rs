@@ -63,6 +63,13 @@ pub trait EventContext {
 
 pub trait ClockContext {
     fn tick(&mut self);
+
+    fn tick_4(&mut self) {
+        self.tick();
+        self.tick();
+        self.tick();
+        self.tick();
+    }
 }
 
 pub trait InterruptContext {
@@ -248,15 +255,12 @@ impl EventContext for GameboyContext {
 
 impl ClockContext for GameboyContext {
     fn tick(&mut self) {
-        // Timer ticks on core clock, not CPU clock!
-        for _ in 0..4 {
-            self.timer.tick(&mut self.interrupt_controller);
-            self.serial
-                .tick(&mut self.interrupt_controller, &mut self.events);
-            self.ppu
-                .tick(&mut self.interrupt_controller, &mut self.events);
-            self.interrupt_controller.tick();
-        }
+        self.timer.tick(&mut self.interrupt_controller);
+        self.serial
+            .tick(&mut self.interrupt_controller, &mut self.events);
+        self.ppu
+            .tick(&mut self.interrupt_controller, &mut self.events);
+        self.interrupt_controller.tick();
         self.clock_counter += 1;
     }
 }
@@ -328,6 +332,10 @@ impl GameBoy {
         let res = execution::handle_next(&mut self.cpu, self.next_operation, &mut self.context)
             .map(|no| self.next_operation = no);
         (self.take_events(), res)
+    }
+
+    pub fn cpu(&self) -> &Cpu {
+        &self.cpu
     }
 
     pub fn dump(&mut self, base: &str) {

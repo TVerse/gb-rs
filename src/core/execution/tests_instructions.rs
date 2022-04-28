@@ -98,7 +98,7 @@ fn noop() {
 
     assert_eq!(context.instruction.unwrap(), Instruction::Nop);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 1);
+    assert_eq!(context.cycles, 4);
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn ld_inn_sp() {
     assert_eq!(context.mem[0x0010], 0x34);
     assert_eq!(context.mem[0x0011], 0x12);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 5);
+    assert_eq!(context.cycles, 20);
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn jr_positive() {
         Instruction::JumpRelative(Immediate8(0x05))
     );
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 3);
+    assert_eq!(context.cycles, 12);
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn jr_negative() {
         Instruction::JumpRelative(Immediate8(0xFD))
     );
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 3);
+    assert_eq!(context.cycles, 12);
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn jr_cc_taken() {
         Instruction::JumpConditionalRelative(JumpCondition::Z, Immediate8(0x05))
     );
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 3);
+    assert_eq!(context.cycles, 12);
 }
 
 #[test]
@@ -232,7 +232,7 @@ fn jr_cc_not_taken() {
         Instruction::JumpConditionalRelative(JumpCondition::Z, Immediate8(0x05))
     );
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 2);
+    assert_eq!(context.cycles, 8);
 }
 
 #[test]
@@ -260,7 +260,7 @@ fn add_hl_rp() {
     assert_eq!(cpu.read_register16(Register16::HL), 0);
     assert_eq!(cpu.flags(), Flags::H | Flags::C);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 2);
+    assert_eq!(context.cycles, 8);
 
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::HL, 0x0EFF);
@@ -286,7 +286,7 @@ fn add_hl_rp() {
     assert_eq!(cpu.read_register16(Register16::HL), 0x0F00);
     assert_eq!(cpu.flags(), Flags::Z);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 2);
+    assert_eq!(context.cycles, 8);
 }
 
 #[test]
@@ -317,7 +317,7 @@ fn sub_n() {
     assert_eq!(cpu.read_register8(Register8::A), 5);
     assert_eq!(cpu.flags(), Flags::N);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 1);
+    assert_eq!(context.cycles, 4);
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn sub_n_carry() {
     assert_eq!(cpu.read_register8(Register8::A), 251);
     assert_eq!(cpu.flags(), Flags::N | Flags::C | Flags::H);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 1);
+    assert_eq!(context.cycles, 4);
 }
 
 #[test]
@@ -379,7 +379,7 @@ fn rst() {
     assert_eq!(context.mem[0x1001], 0x00, "0x1001");
     assert_eq!(cpu.read_register16(Register16::PC), 0x11);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 4);
+    assert_eq!(context.cycles, 16);
 }
 
 #[test]
@@ -405,7 +405,7 @@ fn push_pop() {
         context.instruction.unwrap(),
         Instruction::Push(Register16::BC)
     );
-    assert_eq!(context.cycles, 4, "push cycles");
+    assert_eq!(context.cycles, 16, "push cycles");
     assert_eq!(context.mem[0x3FFF], 0x01);
     assert_eq!(context.mem[0x3FFE], 0x02);
     assert_eq!(cpu.read_register16(Register16::SP), 0x3FFE);
@@ -426,7 +426,7 @@ fn push_pop() {
         context.instruction.unwrap(),
         Instruction::Pop(Register16::DE)
     );
-    assert_eq!(context.cycles, 3, "pop cycles");
+    assert_eq!(context.cycles, 12, "pop cycles");
     assert_eq!(cpu.read_register16(Register16::SP), 0x4000);
     assert_eq!(cpu.read_register16(Register16::DE), 0x0102);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
@@ -460,7 +460,7 @@ fn add_8bit_carry() {
     assert_eq!(cpu.read_register8(Register8::A), 15);
     assert_eq!(cpu.flags(), Flags::empty());
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 1);
+    assert_eq!(context.cycles, 4);
 }
 
 #[test]
@@ -492,7 +492,7 @@ fn add_8bit_carry_carry_in() {
     assert_eq!(cpu.read_register8(Register8::A), 16);
     assert_eq!(cpu.flags(), Flags::H);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 1);
+    assert_eq!(context.cycles, 4);
 }
 
 #[test]
@@ -520,7 +520,7 @@ fn add_hl_bc_1() {
     assert_eq!(cpu.read_register16(Register16::HL), 0x1000);
     assert_eq!(cpu.flags(), Flags::H);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 2);
+    assert_eq!(context.cycles, 8);
 }
 
 #[test]
@@ -548,7 +548,7 @@ fn add_hl_bc_2() {
     assert_eq!(cpu.read_register16(Register16::HL), 0x0000);
     assert_eq!(cpu.flags(), Flags::H | Flags::C);
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 2);
+    assert_eq!(context.cycles, 8);
 }
 
 #[test]
@@ -579,7 +579,7 @@ fn swap() {
     assert_eq!(cpu.read_register8(Register8::C), 0x21);
     assert_eq!(cpu.flags(), Flags::empty());
     assert_eq!(next_operation, NextOperation::Opcode(0xFF));
-    assert_eq!(context.cycles, 2);
+    assert_eq!(context.cycles, 8);
 }
 
 #[test]

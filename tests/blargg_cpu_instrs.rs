@@ -34,14 +34,7 @@ blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
 
-#[test]
-fn blargg_cpu_instr_all() {
-    let rom = fs::read("gb-test-roms/cpu_instrs/cpu_instrs.gb").unwrap();
-
-    execute_test(rom);
-}
-
-const MAX_CYCLES: u64 = 75_000_000;
+const MAX_CYCLES: u64 = 300_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("gb-test-roms/cpu_instrs/individual");

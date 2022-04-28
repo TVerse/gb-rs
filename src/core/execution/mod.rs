@@ -75,7 +75,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
 
     fn halted(&mut self, original_next_op: NextOperation) -> NextOperation {
         self.context.push_event(ExecutionEvent::Halted);
-        self.context.tick();
+        self.context.tick_4();
 
         if self.context.should_cancel_halt() {
             self.cpu.set_state(State::Running);
@@ -93,7 +93,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn start_interrupt_routine(&mut self) -> NextOperation {
         self.context
             .push_event(ExecutionEvent::InterruptRoutineStarted);
-        self.context.tick();
+        self.context.tick_4();
         self.push(Register16::PC);
         let interrupt = self
             .context
@@ -316,6 +316,9 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
 
     fn read_byte_at(&mut self, addr: u16) -> u8 {
+        self.context.tick();
+        self.context.tick();
+        self.context.tick();
         let b = self.context.read(addr);
         self.context.tick();
         b
@@ -340,6 +343,9 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
 
     fn write_byte_to(&mut self, addr: u16, b: u8) {
+        self.context.tick();
+        self.context.tick();
+        self.context.tick();
         self.context.write(addr, b);
         self.context.tick();
     }
@@ -395,7 +401,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn jr(&mut self) -> Instruction {
         let offset = self.read_byte_at_pc();
         let ioffset = offset as i8;
-        self.context.tick();
+        self.context.tick_4();
         self.cpu.write_register16(
             Register16::PC,
             add_i8_to_u16(ioffset, self.cpu.read_register16(Register16::PC)),
@@ -408,7 +414,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
         let ioffset = offset as i8;
 
         if self.should_jump(cc) {
-            self.context.tick();
+            self.context.tick_4();
             self.cpu.write_register16(
                 Register16::PC,
                 add_i8_to_u16(ioffset, self.cpu.read_register16(Register16::PC)),
@@ -426,7 +432,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
         let l = self.cpu.read_register8(Register8::L);
         let l_res = self.add_8bit(l, lsb);
         self.cpu.write_register8(Register8::L, l_res);
-        self.context.tick();
+        self.context.tick_4();
         let h = self.cpu.read_register8(Register8::H);
         let h_res = self.add_8bit_carry(h, msb);
         self.cpu.write_register8(Register8::H, h_res);
@@ -661,13 +667,13 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn inc_16(&mut self, rp: Register16) -> Instruction {
         self.cpu
             .write_register16(rp, self.cpu.read_register16(rp).wrapping_add(1));
-        self.context.tick();
+        self.context.tick_4();
         Instruction::IncRegister16(rp)
     }
     fn dec_16(&mut self, rp: Register16) -> Instruction {
         self.cpu
             .write_register16(rp, self.cpu.read_register16(rp).wrapping_sub(1));
-        self.context.tick();
+        self.context.tick_4();
         Instruction::DecRegister16(rp)
     }
     fn inc(&mut self, reg: CommonRegister) -> Instruction {
@@ -902,16 +908,16 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
 
     fn ret(&mut self) -> Instruction {
         self.pop(Register16::PC);
-        self.context.tick();
+        self.context.tick_4();
 
         Instruction::Return
     }
 
     fn ret_cc(&mut self, cc: JumpCondition) -> Instruction {
-        self.context.tick();
+        self.context.tick_4();
         if self.should_jump(cc) {
             self.pop(Register16::PC);
-            self.context.tick();
+            self.context.tick_4();
         }
 
         Instruction::ReturnConditional(cc)
@@ -928,7 +934,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn push(&mut self, register: Register16) -> Instruction {
         let sp = self.cpu.read_register16(Register16::SP);
-        self.context.tick();
+        self.context.tick_4();
         let w = self.cpu.read_register16(register);
         self.write_word_to(sp.wrapping_sub(2), w);
         self.cpu
@@ -960,8 +966,8 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
         let c = res_lower > 0xFF;
 
         let res = add_i8_to_u16(imm as i8, sp);
-        self.context.tick();
-        self.context.tick();
+        self.context.tick_4();
+        self.context.tick_4();
 
         self.cpu.modify_flags(|f| {
             f.remove(Flags::Z | Flags::N);
@@ -999,7 +1005,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn jp_cc(&mut self, cc: JumpCondition) -> Instruction {
         let imm = self.read_word_at_pc();
         if self.should_jump(cc) {
-            self.context.tick();
+            self.context.tick_4();
             self.cpu.write_register16(Register16::PC, imm)
         }
         Instruction::JumpConditionalImmediate(cc, Immediate16(imm))
@@ -1034,7 +1040,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn jp(&mut self) -> Instruction {
         let addr = self.read_word_at_pc();
-        self.context.tick();
+        self.context.tick_4();
         self.cpu.write_register16(Register16::PC, addr);
 
         Instruction::JumpImmediate(Immediate16(addr))
@@ -1056,7 +1062,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn call(&mut self) -> Instruction {
         let target = self.read_word_at_pc();
-        self.context.tick();
+        self.context.tick_4();
         self.push(Register16::PC);
         self.cpu.write_register16(Register16::PC, target);
 
@@ -1065,7 +1071,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn call_cc(&mut self, cc: JumpCondition) -> Instruction {
         let target = self.read_word_at_pc();
         if self.should_jump(cc) {
-            self.context.tick();
+            self.context.tick_4();
             self.push(Register16::PC);
             self.cpu.write_register16(Register16::PC, target);
         }

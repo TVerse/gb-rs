@@ -90,7 +90,7 @@ fn routine_start() {
     let next = handle_next(&mut cpu, NextOperation::StartInterruptRoutine, &mut context).unwrap();
     assert_eq!(next, NextOperation::Opcode(0x00), "op");
     assert_eq!(cpu.read_register16(Register16::PC), 0x51, "address");
-    assert_eq!(context.cycles, 5, "cycles");
+    assert_eq!(context.cycles, 20, "cycles");
     assert_eq!(
         context.interrupt_unraised.unwrap(),
         Interrupt::Timer,

@@ -27,7 +27,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
     console_log_level: LogLevel,
 
-    #[clap(default_value_t = String::from("test_roms/dmg-acid2.gb"))]
+    #[clap(default_value_t = String::from("test_roms/mts-20211031-2031-86d1acf/emulator-only/mbc1/bits_bank1.gb"))]
     path: String,
 }
 
@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         log::info!("Debug trigger!");
                         // in_step = true;
                         gb.dump("dump");
-                        return Ok(());
+                        // return Ok(());
                     }
                     ExecutionEvent::MemoryWritten { address, value } if address.0 == 0xFF41 => {
                         // log::info!("Write breakpoint...");
