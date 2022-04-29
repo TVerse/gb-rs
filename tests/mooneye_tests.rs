@@ -1,6 +1,9 @@
 #[macro_use]
 mod mooneye_macro;
 
+#[test]
+fn make_intellij_see_this_as_test_file() {}
+
 mooneye_tests!(
     "timer",
     "acceptance/timer/",
@@ -20,3 +23,13 @@ mooneye_tests!(
 );
 
 mooneye_tests!("instructions", "acceptance/instr/", "daa");
+
+mooneye_tests!(
+    "instruction_timing",
+    "acceptance/",
+    "div_timing",
+    "pop_timing",
+    "reti_intr_timing"
+);
+
+mooneye_tests!("bits", "acceptance/bits/", "reg_f");
