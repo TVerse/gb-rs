@@ -37,7 +37,7 @@ blargg_test!("11");
 const MAX_CYCLES: u64 = 300_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
-    let base_path = Path::new("gb-test-roms/cpu_instrs/individual");
+    let base_path = Path::new("vendored_test_roms/blargg/cpu_instrs/individual");
     let file = fs::read_dir(base_path)
         .unwrap()
         .map(|d| d.unwrap())

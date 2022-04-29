@@ -9,9 +9,8 @@ macro_rules! mooneye_tests {
     ($name_prefix:expr, $base_path:expr, $test_name:expr) => {
         paste::paste! {
             #[test]
-            #[ignore]
             fn [<$name_prefix _ $test_name>]() {
-                mooneye_macro::test_rom(&format!("test_roms/mts-20211031-2031-86d1acf/{}{}.gb", $base_path, $test_name))
+                mooneye_macro::test_rom(&format!("vendored_test_roms/mts-20211031-2031-86d1acf/{}{}.gb", $base_path, $test_name))
             }
         }
     };
