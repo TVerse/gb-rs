@@ -1,11 +1,11 @@
 mod mbc1;
 mod rom_only;
 
-use crate::core::cartridge::mbc1::Mbc1Cartridge;
-use crate::core::cartridge::rom_only::RomOnlyCartridge;
-
-use crate::core::Addressable;
 use std::fmt::Debug;
+
+use crate::components::cartridge::mbc1::Mbc1Cartridge;
+use crate::components::cartridge::rom_only::RomOnlyCartridge;
+use crate::Addressable;
 
 pub trait Cartridge: Addressable + Debug {}
 

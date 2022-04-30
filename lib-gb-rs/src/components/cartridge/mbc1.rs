@@ -1,5 +1,5 @@
-use crate::core::cartridge::Cartridge;
-use crate::core::{Addressable, KIB};
+use crate::components::cartridge::Cartridge;
+use crate::{Addressable, KIB};
 
 #[derive(Debug, Clone)]
 pub struct Mbc1Cartridge {

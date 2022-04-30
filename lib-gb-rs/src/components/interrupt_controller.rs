@@ -1,5 +1,6 @@
-use crate::core::{Addressable, HandleInterruptContext, InterruptContext};
 use bitflags::bitflags;
+
+use crate::{Addressable, HandleInterruptContext, InterruptContext};
 
 bitflags! {
     #[derive(Default)]

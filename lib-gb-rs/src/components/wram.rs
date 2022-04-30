@@ -1,20 +1,20 @@
-use crate::core::Addressable;
+use crate::{Addressable, KIB};
 
-pub struct HighRam {
-    ram: [u8; 127],
+pub struct WorkRam {
+    ram: [u8; 8 * KIB],
 }
 
-impl Default for HighRam {
+impl Default for WorkRam {
     fn default() -> Self {
-        Self { ram: [0; 127] }
+        Self { ram: [0; 8 * KIB] }
     }
 }
 
-impl Addressable for HighRam {
+impl Addressable for WorkRam {
     fn read(&self, address: u16) -> Option<u8> {
         let a = address as usize;
         match address {
-            0xFF80..=0xFFFE => Some(self.ram[a - 0xFF80]),
+            0xC000..=0xDFFF => Some(self.ram[a - 0xC000]),
             // TODO Echo RAM, trace log somehow?
             _ => None,
         }
@@ -23,10 +23,11 @@ impl Addressable for HighRam {
     fn write(&mut self, address: u16, value: u8) -> Option<()> {
         let a = address as usize;
         match address {
-            0xFF80..=0xFFFE => {
-                self.ram[a - 0xFF80] = value;
+            0xC000..=0xDFFF => {
+                self.ram[a - 0xC000] = value;
                 Some(())
             }
+            // TODO Echo RAM, trace log somehow?
             _ => None,
         }
     }

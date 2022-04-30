@@ -1,7 +1,7 @@
 use super::*;
-use crate::core::execution::instructions::Instruction;
-use crate::core::interrupt_controller::Interrupt;
-use crate::core::{
+use crate::components::interrupt_controller::Interrupt;
+use crate::cpu_execution::instructions::Instruction;
+use crate::{
     ClockContext, EventContext, ExecutionEvent, HandleInterruptContext, InterruptContext,
     MemoryContext, KIB,
 };

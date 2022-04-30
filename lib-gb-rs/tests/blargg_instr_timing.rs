@@ -1,6 +1,7 @@
-use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy};
 use std::fs;
 use std::path::Path;
+
+use lib_gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy};
 
 const MAX_CYCLES: u64 = 3_000_000;
 
