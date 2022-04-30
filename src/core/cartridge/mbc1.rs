@@ -1,5 +1,5 @@
 use crate::core::cartridge::Cartridge;
-use crate::core::KIB;
+use crate::core::{Addressable, KIB};
 
 #[derive(Debug, Clone)]
 pub struct Mbc1Cartridge {
@@ -16,7 +16,7 @@ impl Mbc1Cartridge {
     }
 }
 
-impl Cartridge for Mbc1Cartridge {
+impl Addressable for Mbc1Cartridge {
     fn read(&self, address: u16) -> Option<u8> {
         match address {
             0x0000..=0x3FFF => Some(self.rom[0][address as usize]),
@@ -36,6 +36,8 @@ impl Cartridge for Mbc1Cartridge {
         }
     }
 }
+
+impl Cartridge for Mbc1Cartridge {}
 
 #[cfg(test)]
 mod tests {

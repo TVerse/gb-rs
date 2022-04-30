@@ -1,5 +1,5 @@
 use crate::core::cartridge::Cartridge;
-use crate::core::KIB;
+use crate::core::{Addressable, KIB};
 
 #[derive(Debug, Clone)]
 pub struct RomOnlyCartridge {
@@ -12,7 +12,7 @@ impl RomOnlyCartridge {
     }
 }
 
-impl Cartridge for RomOnlyCartridge {
+impl Addressable for RomOnlyCartridge {
     fn read(&self, address: u16) -> Option<u8> {
         self.rom.get(address as usize).copied()
     }
@@ -21,3 +21,5 @@ impl Cartridge for RomOnlyCartridge {
         None
     }
 }
+
+impl Cartridge for RomOnlyCartridge {}
