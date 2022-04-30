@@ -1,4 +1,5 @@
 #![feature(bigint_helper_methods)]
+#![feature(slice_flatten)]
 
 mod core;
 

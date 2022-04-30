@@ -165,7 +165,6 @@ fn load_rom<P: AsRef<Path>>(path: P) -> Vec<u8> {
 fn make_image(buf: &Buffer) {
     let colors = buf.flatten();
     let bytes: Vec<u8> = colors
-        .iter()
         .flat_map(|c| match c {
             Color::White => [0xFF],
             Color::LightGrey => [0xAA],

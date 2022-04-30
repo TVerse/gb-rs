@@ -1,10 +1,12 @@
+mod buffer;
+
 use crate::core::interrupt_controller::Interrupt;
 use crate::core::{Addressable, EventContext, InterruptContext};
 use crate::ExecutionEvent;
 use bitflags::bitflags;
 use std::mem;
 
-pub type Buffer = [[Color; 160]; 144];
+pub use buffer::{Buffer, Line};
 
 bitflags! {
     struct LCDC: u8 {
@@ -171,7 +173,7 @@ impl Ppu {
                         ctx.raise_interrupt(Interrupt::VBlank);
                         event_ctx.push_event(ExecutionEvent::FrameReady(mem::replace(
                             &mut self.frame_buffer,
-                            new_buffer(),
+                            Buffer::boxed(),
                         )));
                         event_ctx.push_event(ExecutionEvent::PpuModeSwitch {
                             mode: self.mode,
@@ -423,7 +425,7 @@ impl Default for Ppu {
             scx: 0,
             scy: 0,
             bg_palette: 0,
-            frame_buffer: new_buffer(),
+            frame_buffer: Buffer::boxed(),
             lyc: 0,
             stat: Stat::empty(),
             lyc_is_ly: false,
@@ -438,8 +440,4 @@ impl std::fmt::Display for Ppu {
         writeln!(f, "LCDC: {:?}", self.lcdc)?;
         writeln!(f, "STAT: {:?}", self.stat)
     }
-}
-
-fn new_buffer() -> Box<Buffer> {
-    Box::new([[Color::Black; 160]; 144])
 }

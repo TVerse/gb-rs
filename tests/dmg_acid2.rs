@@ -36,7 +36,6 @@ fn dmg_acid2() {
                     let buf = buffer.unwrap();
                     let colors = buf.flatten();
                     let bytes: Vec<u8> = colors
-                        .iter()
                         .flat_map(|c| match c {
                             Color::White => [0xFF],
                             Color::LightGrey => [0xAA],
