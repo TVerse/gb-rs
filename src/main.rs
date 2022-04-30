@@ -172,5 +172,12 @@ fn make_image(buf: &Buffer) {
             Color::Black => [0x00],
         })
         .collect();
-    image::save_buffer("image.png", &bytes, 160, 144, image::ColorType::L8).unwrap()
+    image::save_buffer(
+        "image.png",
+        &bytes,
+        Buffer::width() as u32,
+        Buffer::height() as u32,
+        image::ColorType::L8,
+    )
+    .unwrap()
 }
