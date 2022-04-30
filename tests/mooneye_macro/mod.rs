@@ -1,7 +1,7 @@
 use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy, Register8};
 use std::fs;
 
-const MAX_CYCLES: u64 = 10_000_000_000;
+const MAX_CYCLES: u64 = 10_000_000;
 
 #[macro_export]
 macro_rules! mooneye_tests {

@@ -3,6 +3,11 @@ use paste::paste;
 use std::fs;
 use std::path::Path;
 
+const MAX_CYCLES: u64 = 100_000_000;
+
+#[test]
+fn make_intellij_see_this_as_test_file() {}
+
 macro_rules! blargg_test {
     ($n:expr) => {
         paste! {
@@ -33,8 +38,6 @@ blargg_test!("08");
 blargg_test!("09");
 blargg_test!("10");
 blargg_test!("11");
-
-const MAX_CYCLES: u64 = 300_000_000;
 
 fn load_rom(prefix: &str) -> Vec<u8> {
     let base_path = Path::new("vendored_test_roms/blargg/cpu_instrs/individual");

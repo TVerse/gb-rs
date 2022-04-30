@@ -2,7 +2,7 @@ use gb_rs::{parse_into_cartridge, ExecutionEvent, GameBoy};
 use std::fs;
 use std::path::Path;
 
-const MAX_CYCLES: u64 = 300_000_000;
+const MAX_CYCLES: u64 = 3_000_000;
 
 #[test]
 fn blargg_instr_timing() {
