@@ -9,13 +9,13 @@ use crate::core::{
 const FULL_ADDRESS_SPACE: usize = 64 * KIB;
 
 #[derive(Debug)]
-pub struct TestContext {
+pub struct InstructionTestContext {
     pub cycles: usize,
     pub mem: [u8; FULL_ADDRESS_SPACE],
     pub instruction: Option<Instruction>,
 }
 
-impl Default for TestContext {
+impl Default for InstructionTestContext {
     fn default() -> Self {
         Self {
             cycles: 0,
@@ -25,13 +25,13 @@ impl Default for TestContext {
     }
 }
 
-impl TestContext {
+impl InstructionTestContext {
     pub fn reset_cycles(&mut self) {
         self.cycles = 0;
     }
 }
 
-impl MemoryContext for TestContext {
+impl MemoryContext for InstructionTestContext {
     fn read(&mut self, addr: u16) -> u8 {
         self.mem[addr as usize]
     }
@@ -41,7 +41,7 @@ impl MemoryContext for TestContext {
     }
 }
 
-impl EventContext for TestContext {
+impl EventContext for InstructionTestContext {
     fn push_event(&mut self, event: ExecutionEvent) {
         if let ExecutionEvent::InstructionExecuted { instruction, .. } = event {
             self.instruction = Some(instruction)
@@ -49,17 +49,17 @@ impl EventContext for TestContext {
     }
 }
 
-impl ClockContext for TestContext {
+impl ClockContext for InstructionTestContext {
     fn tick(&mut self) {
         self.cycles += 1;
     }
 }
 
-impl InterruptContext for TestContext {
+impl InterruptContext for InstructionTestContext {
     fn raise_interrupt(&mut self, _interrupt: Interrupt) {}
 }
 
-impl HandleInterruptContext for TestContext {
+impl HandleInterruptContext for InstructionTestContext {
     fn unraise_interrupt(&mut self, _interrupt: Interrupt) {}
 
     fn should_start_interrupt_routine(&self) -> bool {
@@ -84,7 +84,7 @@ impl HandleInterruptContext for TestContext {
 #[test]
 fn noop() {
     let mut cpu = Cpu::default();
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[1] = 0xFF;
 
     let opcode = get_first_opcode(&mut cpu, &mut context);
@@ -105,7 +105,7 @@ fn noop() {
 fn ld_inn_sp() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::SP, 0x1234);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x08;
     context.mem[1] = 0x10;
     context.mem[2] = 0x00;
@@ -131,10 +131,37 @@ fn ld_inn_sp() {
 }
 
 #[test]
+fn ld_rp_nn() {
+    let mut cpu = Cpu::default();
+    let mut context = InstructionTestContext::default();
+    context.mem[0] = 0x31;
+    context.mem[1] = 0x34;
+    context.mem[2] = 0x12;
+    context.mem[3] = 0xFF;
+
+    let opcode = get_first_opcode(&mut cpu, &mut context);
+
+    let next_operation = Execution {
+        cpu: &mut cpu,
+        context: &mut context,
+    }
+        .decode_execute_fetch(opcode)
+        .unwrap();
+
+    assert_eq!(
+        context.instruction.unwrap(),
+        Instruction::LoadRegisterImmediate16(Register16::SP, Immediate16(0x1234))
+    );
+    assert_eq!(cpu.read_register16(Register16::SP), 0x1234);
+    assert_eq!(next_operation, NextOperation::Opcode(0xFF));
+    assert_eq!(context.cycles, 12);
+}
+
+#[test]
 fn jr_positive() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::PC, 0x1234);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0x1234] = 0x18;
     context.mem[0x1235] = 0x05;
     context.mem[0x123B] = 0xFF;
@@ -160,7 +187,7 @@ fn jr_positive() {
 fn jr_negative() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::PC, 0x1234);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0x1234] = 0x18;
     context.mem[0x1235] = 0xFD;
     context.mem[0x1233] = 0xFF;
@@ -187,7 +214,7 @@ fn jr_cc_taken() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::PC, 0x1234);
     cpu.modify_flags(|f| f.insert(Flags::Z));
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0x1234] = 0b00101000;
     context.mem[0x1235] = 0x05;
     context.mem[0x123B] = 0xFF;
@@ -213,7 +240,7 @@ fn jr_cc_taken() {
 fn jr_cc_not_taken() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::PC, 0x1234);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0x1234] = 0b00101000;
     context.mem[0x1235] = 0x05;
     context.mem[0x1236] = 0xFF;
@@ -240,7 +267,7 @@ fn add_hl_rp() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::HL, 0xFFFF);
     cpu.write_register16(Register16::BC, 0x0001);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x09;
     context.mem[1] = 0xFF;
 
@@ -265,7 +292,7 @@ fn add_hl_rp() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::HL, 0x0EFF);
     cpu.write_register16(Register16::BC, 0x0001);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x09;
     context.mem[1] = 0xFF;
 
@@ -294,7 +321,7 @@ fn sub_n() {
     let mut cpu = Cpu::default();
     cpu.write_register8(Register8::A, 10);
     cpu.write_register8(Register8::B, 5);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x90;
     context.mem[1] = 0xFF;
 
@@ -325,7 +352,7 @@ fn sub_n_carry() {
     let mut cpu = Cpu::default();
     cpu.write_register8(Register8::A, 5);
     cpu.write_register8(Register8::B, 10);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x90;
     context.mem[1] = 0xFF;
 
@@ -357,7 +384,7 @@ fn rst() {
     cpu.write_register8(Register8::A, 10);
     cpu.write_register8(Register8::B, 5);
     cpu.write_register16(Register16::SP, 0x1002);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0xD7;
     context.mem[0x10] = 0xFF;
 
@@ -388,7 +415,7 @@ fn push_pop() {
     cpu.write_register8(Register8::B, 0x01);
     cpu.write_register8(Register8::C, 0x02);
     cpu.write_register16(Register16::SP, 0x4000);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0xC5;
     context.mem[1] = 0xD1;
     context.mem[2] = 0xFF;
@@ -437,7 +464,7 @@ fn add_8bit_carry() {
     let mut cpu = Cpu::default();
     cpu.write_register8(Register8::A, 10);
     cpu.write_register8(Register8::B, 5);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x88;
     context.mem[1] = 0xFF;
 
@@ -469,7 +496,7 @@ fn add_8bit_carry_carry_in() {
     cpu.write_register8(Register8::A, 10);
     cpu.write_register8(Register8::B, 5);
     cpu.modify_flags(|f| f.insert(Flags::C));
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x88;
     context.mem[1] = 0xFF;
 
@@ -500,7 +527,7 @@ fn add_hl_bc_1() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::HL, 0x0FFF);
     cpu.write_register16(Register16::BC, 1);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x09;
     context.mem[1] = 0xFF;
 
@@ -528,7 +555,7 @@ fn add_hl_bc_2() {
     let mut cpu = Cpu::default();
     cpu.write_register16(Register16::HL, 0xFFFF);
     cpu.write_register16(Register16::BC, 1);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0x09;
     context.mem[1] = 0xFF;
 
@@ -555,7 +582,7 @@ fn add_hl_bc_2() {
 fn swap() {
     let mut cpu = Cpu::default();
     cpu.write_register8(Register8::C, 0x12);
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0xCB;
     context.mem[1] = 0x31;
     context.mem[2] = 0xFF;
@@ -585,7 +612,7 @@ fn swap() {
 #[test]
 fn di() {
     let mut cpu = Cpu::default();
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0xF3;
     context.mem[1] = 0xFF;
 
@@ -606,7 +633,7 @@ fn di() {
 #[test]
 fn call() {
     let mut cpu = Cpu::default();
-    let mut context = TestContext::default();
+    let mut context = InstructionTestContext::default();
     context.mem[0] = 0xCD;
     context.mem[1] = 0x34;
     context.mem[2] = 0x12;

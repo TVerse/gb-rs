@@ -5,7 +5,6 @@ use std::path::Path;
 const MAX_CYCLES: u64 = 300_000_000;
 
 #[test]
-#[ignore]
 fn blargg_instr_timing() {
     let file = Path::new("vendored_test_roms/blargg/instr_timing/instr_timing.gb");
     let rom = fs::read(file).unwrap();

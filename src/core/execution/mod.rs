@@ -967,7 +967,6 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
 
         let res = add_i8_to_u16(imm as i8, sp);
         self.context.tick_4();
-        self.context.tick_4();
 
         self.cpu.modify_flags(|f| {
             f.remove(Flags::Z | Flags::N);
@@ -979,6 +978,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn add_sp_d(&mut self) -> Instruction {
         let imm = self.read_byte_at_pc();
+        self.context.tick_4();
         let res = self.add_signed_to_sp(imm);
         self.cpu.write_register16(Register16::SP, res);
         Instruction::AddSPImmediate(Immediate8(imm))
@@ -999,6 +999,7 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn ld_sp_hl(&mut self) -> Instruction {
         self.cpu
             .write_register16(Register16::SP, self.cpu.read_register16(Register16::HL));
+        self.context.tick_4();
 
         Instruction::LoadSPHL
     }
@@ -1070,7 +1071,6 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     fn call_cc(&mut self, cc: JumpCondition) -> Instruction {
         let target = self.read_word_at_pc();
         if self.should_jump(cc) {
-            self.context.tick_4();
             self.push(Register16::PC);
             self.cpu.write_register16(Register16::PC, target);
         }
