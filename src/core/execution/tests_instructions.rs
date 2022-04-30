@@ -145,8 +145,8 @@ fn ld_rp_nn() {
         cpu: &mut cpu,
         context: &mut context,
     }
-        .decode_execute_fetch(opcode)
-        .unwrap();
+    .decode_execute_fetch(opcode)
+    .unwrap();
 
     assert_eq!(
         context.instruction.unwrap(),
