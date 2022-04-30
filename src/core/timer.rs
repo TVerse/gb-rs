@@ -64,8 +64,8 @@ impl Timer {
         let is_high = self.divider & self.timer_control.mask() > 0;
         let high_and_enabled = is_high && self.timer_enabled;
         if self.timer_overflowed_last_tick {
-                context.raise_interrupt(Interrupt::Timer);
-                self.timer_counter = self.timer_modulo;
+            context.raise_interrupt(Interrupt::Timer);
+            self.timer_counter = self.timer_modulo;
             self.timer_overflowed_last_tick = false;
         }
         if !high_and_enabled && self.timer_was_high_last_tick {

@@ -1062,7 +1062,6 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
     }
     fn call(&mut self) -> Instruction {
         let target = self.read_word_at_pc();
-        self.context.tick_4();
         self.push(Register16::PC);
         self.cpu.write_register16(Register16::PC, target);
 

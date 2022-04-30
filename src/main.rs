@@ -27,7 +27,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value_t = LogLevel::Info)]
     console_log_level: LogLevel,
 
-    #[clap(default_value_t = String::from("vendored_test_roms/mts-20211031-2031-86d1acf/emulator-only/mbc1/bits_bank1.gb"))]
+    #[clap(default_value_t = String::from("vendored_test_roms/blargg/instr_timing/instr_timing.gb"))]
     path: String,
 }
 

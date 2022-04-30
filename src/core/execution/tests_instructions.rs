@@ -583,6 +583,53 @@ fn swap() {
 }
 
 #[test]
+fn di() {
+    let mut cpu = Cpu::default();
+    let mut context = TestContext::default();
+    context.mem[0] = 0xF3;
+    context.mem[1] = 0xFF;
+
+    let opcode = get_first_opcode(&mut cpu, &mut context);
+
+    let next_operation = Execution {
+        cpu: &mut cpu,
+        context: &mut context,
+    }
+    .decode_execute_fetch(opcode)
+    .unwrap();
+
+    assert_eq!(context.instruction.unwrap(), Instruction::DI,);
+    assert_eq!(next_operation, NextOperation::Opcode(0xFF));
+    assert_eq!(context.cycles, 4);
+}
+
+#[test]
+fn call() {
+    let mut cpu = Cpu::default();
+    let mut context = TestContext::default();
+    context.mem[0] = 0xCD;
+    context.mem[1] = 0x34;
+    context.mem[2] = 0x12;
+    context.mem[0x1234] = 0xFF;
+
+    let opcode = get_first_opcode(&mut cpu, &mut context);
+
+    let next_operation = Execution {
+        cpu: &mut cpu,
+        context: &mut context,
+    }
+    .decode_execute_fetch(opcode)
+    .unwrap();
+
+    assert_eq!(
+        context.instruction.unwrap(),
+        Instruction::CallImmediate(Immediate16(0x1234)),
+    );
+    assert_eq!(next_operation, NextOperation::Opcode(0xFF));
+    assert_eq!(context.cycles, 24);
+}
+
+#[test]
 fn add_i8_to_u16_test() {
     let a: i8 = 127;
     let b: u16 = 127;
