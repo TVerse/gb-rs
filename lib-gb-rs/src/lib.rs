@@ -27,8 +27,6 @@ mod components;
 mod cpu_execution;
 mod execution_events;
 
-const NS_PER_FRAME: u32 = 16_742_706; // .29;
-
 const KIB: usize = 1024;
 
 pub trait MemoryContext {

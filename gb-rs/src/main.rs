@@ -87,24 +87,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         log::warn!("Waiting for next frame");
 
         match event {
-            Event::WindowEvent { event, .. } => match event {
-                glutin::event::WindowEvent::CloseRequested => {
-                    log::warn!("Closing window");
-                    *control_flow = glutin::event_loop::ControlFlow::Exit;
-                }
-                _ => (),
-            },
-            Event::DeviceEvent { event, .. } => match event {
-                DeviceEvent::Key(ki) => {
-                    log::info!("Got key: {:?}, {:?}", ki.virtual_keycode, ki.state);
-                }
-                _ => (),
-            },
+            Event::WindowEvent {
+                event: glutin::event::WindowEvent::CloseRequested,
+                ..
+            } => {
+                log::warn!("Closing window");
+                *control_flow = glutin::event_loop::ControlFlow::Exit;
+            }
+            Event::DeviceEvent {
+                event: DeviceEvent::Key(ki),
+                ..
+            } => {
+                log::info!("Got key: {:?}, {:?}", ki.virtual_keycode, ki.state);
+            }
             _ => (),
         }
     });
-}
-
-fn load_rom<P: AsRef<Path>>(path: P) -> Result<Vec<u8>, Box<dyn Error>> {
-    Ok(fs::read(path)?)
 }
