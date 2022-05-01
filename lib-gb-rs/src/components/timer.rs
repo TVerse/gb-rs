@@ -1,5 +1,5 @@
-use crate::core::interrupt_controller::Interrupt;
-use crate::core::{Addressable, InterruptContext};
+use crate::components::interrupt_controller::Interrupt;
+use crate::{Addressable, InterruptContext};
 
 #[derive(Debug, Copy, Clone)]
 enum TimerControl {

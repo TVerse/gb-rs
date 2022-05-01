@@ -1,6 +1,6 @@
 use super::*;
-use crate::core::interrupt_controller::Interrupt;
-use crate::core::KIB;
+use crate::components::interrupt_controller::Interrupt;
+use crate::KIB;
 
 const FULL_ADDRESS_SPACE: usize = 64 * KIB;
 

@@ -1,5 +1,6 @@
-use crate::core::ppu::Color;
 use std::ops::{Index, IndexMut};
+
+use crate::components::ppu::Color;
 
 #[derive(Debug, Clone)]
 pub struct Line([Color; 160]);

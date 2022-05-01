@@ -1,8 +1,9 @@
 #![feature(slice_flatten)]
-use gb_rs::{parse_into_cartridge, Color, ExecutionEvent, GameBoy};
-use image::io::Reader;
 use std::fs;
 use std::path::Path;
+
+use image::io::Reader;
+use lib_gb_rs::{parse_into_cartridge, Color, ExecutionEvent, GameBoy};
 
 const MAX_CYCLES: u64 = 5_000_000;
 

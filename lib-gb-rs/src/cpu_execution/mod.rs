@@ -1,13 +1,12 @@
-use crate::core::cpu::{Cpu, Flags, Register16, Register8, State};
-use crate::core::execution::instructions::{Immediate16, Immediate8, JumpCondition};
-use crate::core::{
-    ClockContext, EventContext, ExecutionEvent, HandleInterruptContext, HexByte, HexWord,
-    MemoryContext,
-};
-use crate::ExecutionEvent::InterruptRoutineFinished;
-use crate::{ArithmeticOperation, CommonRegister, ResetVector, RotationShiftOperation};
 use instructions::Instruction;
 use thiserror::Error;
+
+use crate::components::cpu::{Cpu, Flags, Register16, Register8, State};
+use crate::cpu_execution::instructions::{Immediate16, Immediate8, JumpCondition};
+use crate::{
+    ArithmeticOperation, ClockContext, CommonRegister, EventContext, ExecutionEvent,
+    HandleInterruptContext, HexByte, HexWord, MemoryContext, ResetVector, RotationShiftOperation,
+};
 
 pub mod instructions;
 #[cfg(test)]
@@ -103,7 +102,8 @@ impl<'a, C: MemoryContext + EventContext + ClockContext + HandleInterruptContext
         self.context.disable_interrupts();
         self.cpu
             .write_register16(Register16::PC, interrupt.handler_address());
-        self.context.push_event(InterruptRoutineFinished(interrupt));
+        self.context
+            .push_event(ExecutionEvent::InterruptRoutineFinished(interrupt));
 
         NextOperation::Opcode(self.read_byte_at_pc())
     }

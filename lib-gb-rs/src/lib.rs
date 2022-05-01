@@ -1,56 +1,33 @@
-use crate::core::cartridge::Cartridge;
-use crate::core::execution::{get_first_opcode, ExecutionError, NextOperation};
-use crate::core::interrupt_controller::{Interrupt, InterruptController};
-use crate::core::ppu::{Buffer, Mode, Ppu};
-use crate::core::timer::Timer;
-use crate::ColorId;
-use cpu::Cpu;
-use execution::instructions::Instruction;
-use high_ram::HighRam;
-use serial::Serial;
+#![feature(bigint_helper_methods)]
+#![feature(slice_flatten)]
+
 use std::path::Path;
 use std::{fs, mem};
-use wram::WorkRam;
 
-pub mod cartridge;
-pub mod cpu;
-pub mod execution;
-pub mod high_ram;
-mod interrupt_controller;
-pub mod ppu;
-pub mod serial;
-mod timer;
-pub mod wram;
+use components::cpu::Cpu;
+use components::high_ram::HighRam;
+use components::interrupt_controller::{Interrupt, InterruptController};
+use components::serial::Serial;
+use components::timer::Timer;
+use components::wram::WorkRam;
+
+pub use crate::components::cartridge::parse_into_cartridge;
+use crate::components::cartridge::Cartridge;
+pub use crate::components::cpu::{Flags, Register16, Register8};
+pub use crate::components::ppu::{Buffer, Color, ColorId};
+use crate::components::ppu::{Mode, Ppu};
+pub use crate::cpu_execution::instructions::{
+    ArithmeticOperation, CommonRegister, Immediate16, Immediate8, Instruction, ResetVector,
+    RotationShiftOperation,
+};
+use crate::cpu_execution::{get_first_opcode, ExecutionError, NextOperation};
+pub use crate::execution_events::{ExecutionEvent, HexByte, HexWord};
+
+mod components;
+mod cpu_execution;
+mod execution_events;
 
 const KIB: usize = 1024;
-
-pub struct HexWord(pub u16);
-
-impl std::fmt::Debug for HexWord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl std::fmt::Display for HexWord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#06x}", self.0)
-    }
-}
-
-pub struct HexByte(pub u8);
-
-impl std::fmt::Debug for HexByte {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
-
-impl std::fmt::Display for HexByte {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#04x}", self.0)
-    }
-}
 
 pub trait MemoryContext {
     fn read(&mut self, addr: u16) -> u8;
@@ -90,86 +67,6 @@ pub trait HandleInterruptContext {
     fn enable_interrupts(&mut self);
 
     fn disable_interrupts(&mut self);
-}
-
-#[derive(Debug)]
-pub enum ExecutionEvent {
-    MemoryRead {
-        address: HexWord,
-        value: HexByte,
-    },
-    MemoryWritten {
-        address: HexWord,
-        value: HexByte,
-    },
-    ReadFromNonMappedAddress(HexWord),
-    WriteToNonMappedAddress(HexWord),
-    InstructionExecuted {
-        opcode: HexByte,
-        instruction: Instruction,
-        new_pc: HexWord,
-        cpu: Cpu,
-    },
-    InterruptRaised(Interrupt),
-    InterruptRoutineStarted,
-    InterruptRoutineFinished(Interrupt),
-    SerialOut(HexByte),
-    FrameReady(Box<Buffer>),
-    PpuModeSwitch {
-        mode: Mode,
-        x: u16,
-        y: u8,
-    },
-    PpuPixelPushed(u8, u8, ColorId),
-    Halted,
-    DebugTrigger,
-}
-
-impl std::fmt::Display for ExecutionEvent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ReadFromNonMappedAddress(a) => {
-                write!(f, "ReadFromNonMappedAddress({})", a)
-            }
-            Self::WriteToNonMappedAddress(a) => {
-                write!(f, "WriteToNonMappedAddress({})", a)
-            }
-            Self::InstructionExecuted {
-                opcode,
-                instruction,
-                new_pc,
-                cpu,
-            } => {
-                writeln!(f, "InstructionExecuted")?;
-                writeln!(f, "Opcode: {}", opcode)?;
-                writeln!(f, "{}", instruction)?;
-                writeln!(f, "PC after instruction: {}", new_pc)?;
-                writeln!(f, "Registers:")?;
-                write!(f, "{}", cpu)
-            }
-            Self::DebugTrigger => write!(f, "DebugTrigger"),
-            Self::MemoryRead { address, value } => {
-                write!(f, "MemoryRead{{address: {}, value: {}}}", address, value)
-            }
-            Self::MemoryWritten { address, value } => {
-                write!(f, "MemoryWritten{{address: {}, value: {}}}", address, value)
-            }
-            Self::InterruptRoutineStarted => write!(f, "InterruptRoutineStarted"),
-            Self::InterruptRoutineFinished(interrupt) => {
-                write!(f, "InterruptRoutineFinished({})", interrupt)
-            }
-            Self::InterruptRaised(interrupt) => {
-                write!(f, "InterruptRaised({})", interrupt)
-            }
-            Self::SerialOut(b) => write!(f, "SerialOut({})", b),
-            Self::FrameReady(_) => write!(f, "FrameReady"),
-            Self::PpuModeSwitch { mode, x, y } => {
-                write!(f, "PpuModeSwitch{{mode: {:?}, x: {}, y: {}}}", mode, x, y)
-            }
-            Self::PpuPixelPushed(x, y, c) => write!(f, "PpuPixelPushed({}, {}, {:?})", x, y, c),
-            Self::Halted => write!(f, "Halted"),
-        }
-    }
 }
 
 pub struct GameboyContext {
@@ -329,7 +226,7 @@ impl GameBoy {
     }
 
     pub fn execute_operation(&mut self) -> (Vec<ExecutionEvent>, Result<(), ExecutionError>) {
-        let res = execution::handle_next(&mut self.cpu, self.next_operation, &mut self.context)
+        let res = cpu_execution::handle_next(&mut self.cpu, self.next_operation, &mut self.context)
             .map(|no| self.next_operation = no);
         (self.take_events(), res)
     }

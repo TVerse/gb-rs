@@ -1,12 +1,12 @@
 mod buffer;
 
-use crate::core::interrupt_controller::Interrupt;
-use crate::core::{Addressable, EventContext, InterruptContext};
-use crate::ExecutionEvent;
-use bitflags::bitflags;
 use std::mem;
 
+use bitflags::bitflags;
 pub use buffer::{Buffer, Line};
+
+use crate::components::interrupt_controller::Interrupt;
+use crate::{Addressable, EventContext, ExecutionEvent, InterruptContext};
 
 bitflags! {
     struct LCDC: u8 {

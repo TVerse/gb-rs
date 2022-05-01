@@ -1,7 +1,7 @@
-use crate::core::interrupt_controller::Interrupt;
-use crate::core::{Addressable, EventContext, HexByte, InterruptContext};
-use crate::ExecutionEvent;
 use bitflags::bitflags;
+
+use crate::components::interrupt_controller::Interrupt;
+use crate::{Addressable, EventContext, ExecutionEvent, HexByte, InterruptContext};
 
 bitflags! {
     #[derive(Default)]

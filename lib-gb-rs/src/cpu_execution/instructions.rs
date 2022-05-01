@@ -1,5 +1,6 @@
-use crate::core::cpu::{Register16, Register8};
 use strum_macros::Display;
+
+use crate::components::cpu::{Register16, Register8};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Immediate8(pub u8);
